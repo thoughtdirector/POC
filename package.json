@@ -1,6 +1,6 @@
 {
   "name": "acriventas-poc",
-  "homepage": "https://tu-usuario.github.io/nombre-repositorio",
+  "homepage": "https://thoughtdirector.github.io/POC/",
   "scripts": {
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
