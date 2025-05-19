@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Páginas
@@ -51,8 +51,8 @@ function App() {
             <Route path="conversation/new" element={<SelectClientForConversation />} />
             <Route path="conversation/new/:clientId" element={<NewConversation />} />
             <Route path="conversation/:conversationId" element={<ConversationDetail />} />
-            <Route path="settings/ai" element={<AISettings />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="settings/ai" element={<AISettings />} />
           </Route>
           
           <Route path="*" element={<Navigate to="/" replace />} />

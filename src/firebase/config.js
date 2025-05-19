@@ -3,14 +3,14 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyApEi7CgbADU0urEtkdRBheJubnyEA-qnw",
-  authDomain: "acriventas-poc.firebaseapp.com",
-  databaseURL: "https://acriventas-poc-default-rtdb.firebaseio.com",
-  projectId: "acriventas-poc",
-  storageBucket: "acriventas-poc.firebasestorage.app",
-  messagingSenderId: "718850780341",
-  appId: "1:718850780341:web:aec07ccdad37235dece2fc",
-  measurementId: "G-0DGH1RQX2G"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);

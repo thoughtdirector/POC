@@ -1,12 +1,10 @@
 {
-  "name": "acriventas-app",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "name": "acriventas-poc",
+  "homepage": "https://tu-usuario.github.io/nombre-repositorio",
   "scripts": {
-    "dev": "vite",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
     "build": "vite build",
-    "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -32,6 +30,7 @@
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
+    "gh-pages": "^6.3.0",
     "globals": "^16.0.0",
     "postcss": "^8.4.31",
     "tailwindcss": "^3.3.3",
