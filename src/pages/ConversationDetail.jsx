@@ -22,6 +22,7 @@ const ConversationDetail = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingTurn, setEditingTurn] = useState(null);
   const [suggestedResponse, setSuggestedResponse] = useState('');
+  const [responseAdded, setResponseAdded] = useState(false);
   
   // Estados para agregar nuevos mensajes
   const [newMessage, setNewMessage] = useState({
@@ -67,6 +68,7 @@ const ConversationDetail = () => {
     }));
   };
   
+  // Esta función SOLO se llama cuando se presiona el botón de Cerrar Conversación
   const handleCloseConversation = async () => {
     try {
       setIsClosing(true);
@@ -102,6 +104,7 @@ const ConversationDetail = () => {
     }));
   };
   
+  // Añadir un nuevo mensaje a la conversación
   const handleAddMessage = async () => {
     if (!newMessage.message.trim()) return;
     
@@ -128,30 +131,55 @@ const ConversationDetail = () => {
         deltas: { relationship: 0, history: 0, attitude: 0, sensitivity: 0, probability: 0 },
         updateClientSoul: false
       });
+      
+      // Si se añade un mensaje del cliente, generar una sugerencia de respuesta
+      if (turnData.sender === 'client' && conversation.status === 'active') {
+        try {
+          const responseResult = await generateAgentResponse(
+            updatedConversation.turns,
+            updatedConversation.currentSoul,
+            turnData.message,
+            turnData.event
+          );
+          
+          setSuggestedResponse(responseResult.responseText);
+          setResponseAdded(true);
+        } catch (error) {
+          console.error('Error al generar sugerencia de respuesta:', error);
+        }
+      }
     } catch (error) {
       console.error('Error al agregar mensaje:', error);
     }
   };
   
+  // Generar sugerencias cuando se cambia un evento
   const handleEventChange = async (newEvent) => {
     // Solo generar sugerencias si la conversación está activa
     if (conversation && conversation.status === 'active') {
       try {
+        // Obtener el último mensaje del cliente (o el mensaje que se está editando)
+        const clientMessage = editingTurn 
+          ? editingTurn.message 
+          : conversation.turns.find(t => t.sender === 'client')?.message || "Mensaje del cliente";
+        
         // Usar el servicio de IA para generar una respuesta
         const responseResult = await generateAgentResponse(
           conversation.turns,
           conversation.currentSoul,
-          editingTurn ? editingTurn.message : "Mensaje del cliente", 
+          clientMessage,
           newEvent
         );
         
         setSuggestedResponse(responseResult.responseText);
+        setResponseAdded(true);
       } catch (error) {
         console.error('Error al generar sugerencia:', error);
       }
     }
   };
   
+  // Editar un turno existente
   const handleEditTurn = async (turnId, updatedData) => {
     try {
       await editConversationTurn(conversationId, turnId, updatedData);
@@ -160,12 +188,30 @@ const ConversationDetail = () => {
       const updatedConversation = await getConversationDetails(conversationId);
       setConversation(updatedConversation);
       
+      // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
+      if (editingTurn.sender === 'client' && conversation.status === 'active') {
+        try {
+          const responseResult = await generateAgentResponse(
+            updatedConversation.turns,
+            updatedConversation.currentSoul,
+            updatedData.message,
+            updatedData.event
+          );
+          
+          setSuggestedResponse(responseResult.responseText);
+          setResponseAdded(true);
+        } catch (error) {
+          console.error('Error al generar sugerencia de respuesta:', error);
+        }
+      }
+      
       setEditingTurn(null);
     } catch (error) {
       console.error('Error al editar mensaje:', error);
     }
   };
   
+  // Eliminar un turno
   const handleDeleteTurn = async (turnId) => {
     if (window.confirm('¿Está seguro de que desea eliminar este mensaje?')) {
       try {
@@ -180,16 +226,32 @@ const ConversationDetail = () => {
     }
   };
   
+  // Usar la respuesta sugerida
   const handleUseSuggestedResponse = () => {
     if (suggestedResponse) {
       setNewMessage(prev => ({
         ...prev,
-        message: suggestedResponse
+        message: suggestedResponse,
+        sender: 'agent'  // Asegurarse de que el remitente sea el agente
       }));
       setSuggestedResponse('');
+      setResponseAdded(false);
     }
   };
   
+  // Continuar la conversación (botón explícito)
+  const handleContinueConversation = () => {
+    // Asegurarse de que la conversación esté activa
+    if (conversation && conversation.status !== 'active') {
+      alert("Esta conversación ya ha sido cerrada. No se pueden agregar más mensajes.");
+      return;
+    }
+    
+    // Enfocar el campo de mensaje
+    document.getElementById('message-input')?.focus();
+  };
+  
+  // Formatear fechas
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
     
@@ -243,11 +305,16 @@ const ConversationDetail = () => {
           <h1 className="text-2xl font-bold">Conversación con {conversation.clientName}</h1>
           <p className="text-gray-500">
             Iniciada el {formatDate(conversation.startedAt)}
+            <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+              conversation.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+            }`}>
+              {conversation.status === 'active' ? 'Activa' : 'Cerrada'}
+            </span>
           </p>
         </div>
         
         <div className="flex gap-2">
-          {/* Botón de editar conversación */}
+          {/* Botón para editar conversación */}
           <button 
             className={`btn-secondary ${isEditing ? 'bg-blue-100 border-blue-300' : ''}`}
             onClick={() => setIsEditing(!isEditing)}
@@ -255,14 +322,27 @@ const ConversationDetail = () => {
             {isEditing ? 'Salir de Edición' : 'Editar Conversación'}
           </button>
           
+          {/* Botón para continuar la conversación */}
+          {conversation.status === 'active' && (
+            <button 
+              className="btn-secondary"
+              onClick={handleContinueConversation}
+            >
+              Continuar Conversación
+            </button>
+          )}
+          
+          {/* Botón para cerrar la conversación - solo visible si está activa */}
           {conversation.status === 'active' && (
             <button 
               className="btn-primary"
               onClick={() => setIsClosing(true)}
             >
-              Cerrar Conversación
+              Finalizar Conversación
             </button>
           )}
+          
+          {/* Botón para volver - nunca finaliza la conversación */}
           <button 
             className="btn-secondary"
             onClick={() => navigate(-1)}
@@ -272,14 +352,14 @@ const ConversationDetail = () => {
         </div>
       </div>
       
+      {/* Nota sobre edición */}
       {isEditing && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded mb-6">
           <h3 className="font-semibold mb-2">Nota sobre edición de conversaciones</h3>
           <p>
-            En este modo de edición no se generan sugerencias de IA automáticamente. Para obtener sugerencias 
-            de mensajes basadas en el contexto y el alma del cliente, utilice la conversación 
-            activa en lugar de la edición. Sin embargo, si modifica el tipo de evento de un mensaje, 
-            se generará una sugerencia basada en este cambio.
+            En este modo de edición puede modificar mensajes y eventos. Si la conversación está activa,
+            se generarán sugerencias de respuesta basadas en los cambios realizados. Estas sugerencias se 
+            generan automáticamente al cambiar un tipo de evento o editar un mensaje del cliente.
           </p>
         </div>
       )}
@@ -378,11 +458,14 @@ const ConversationDetail = () => {
               </p>
             )}
             
+            {/* Mostrar respuesta sugerida basada en los cambios (con animación) */}
             {suggestedResponse && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-md">
-                <p className="text-sm font-medium text-blue-700 mb-1">Sugerencia de respuesta:</p>
-                <p className="text-sm text-blue-800">{suggestedResponse}</p>
-                <div className="flex justify-end mt-2">
+              <div className={`mt-4 p-3 bg-blue-50 border border-blue-100 rounded-md transition-all duration-300 ${responseAdded ? 'opacity-100' : 'opacity-0'}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-blue-700 mb-1">Sugerencia de respuesta:</p>
+                    <p className="text-sm text-blue-800">{suggestedResponse}</p>
+                  </div>
                   <button 
                     className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
                     onClick={handleUseSuggestedResponse}
@@ -390,11 +473,14 @@ const ConversationDetail = () => {
                     Usar esta respuesta
                   </button>
                 </div>
+                <p className="text-xs text-blue-600 mt-2">
+                  Esta sugerencia se generó automáticamente basada en el contexto y los cambios realizados.
+                </p>
               </div>
             )}
             
-            {/* Formulario para agregar nuevos mensajes (modo edición) */}
-            {isEditing && (
+            {/* Formulario para agregar nuevos mensajes (siempre visible si la conversación está activa) */}
+            {conversation.status === 'active' && (
               <div className="mt-6 p-4 border-t border-gray-200">
                 <h3 className="text-md font-semibold mb-3">Agregar Nuevo Mensaje</h3>
                 
@@ -440,10 +526,11 @@ const ConversationDetail = () => {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="message-input" className="block text-sm font-medium text-gray-700 mb-1">
                       Mensaje
                     </label>
                     <textarea
+                      id="message-input"
                       name="message"
                       rows="3"
                       className="input w-full"
@@ -543,6 +630,17 @@ const ConversationDetail = () => {
                   >
                     Agregar Mensaje
                   </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Mensaje indicando que la conversación está cerrada */}
+            {conversation.status !== 'active' && (
+              <div className="mt-6 p-4 border-t border-gray-200">
+                <div className="bg-gray-50 p-4 rounded-md text-center">
+                  <p className="text-gray-600">
+                    Esta conversación ha sido cerrada. No se pueden agregar más mensajes.
+                  </p>
                 </div>
               </div>
             )}
@@ -703,7 +801,7 @@ const ConversationDetail = () => {
                 </div>
                 
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Final</h3>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Actual</h3>
                   <SoulVariablesEditor
                     initialValues={conversation.currentSoul}
                     readOnly={true}
