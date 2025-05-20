@@ -27,15 +27,24 @@ export const analyzeClientMessage = async (message, conversationHistory, clientS
       }
     });
     
-    // Historial de conversación formateado (últimas 3 interacciones para mantener el contexto compacto)
-    const recentHistory = conversationHistory.slice(-3).map(turn => 
-      `${turn.sender === 'agent' ? 'Agente' : 'Cliente'}: ${turn.message}`
-    ).join('\n');
+    // Construir un historial de conversación más completo para contexto
+    // Ahora utilizamos más mensajes para dar mejor contexto
+    let chatHistory = '';
+    const recentConversation = conversationHistory.slice(-5); // Usar 5 mensajes recientes en lugar de 3
     
-    // Formato del prompt siguiendo el formato correcto para Zephyr-7b-beta
-    // Usa el formato de chat que el modelo espera: <|system|>, <|user|>, <|assistant|>
+    for (const turn of recentConversation) {
+      if (turn.sender === 'agent') {
+        chatHistory += `Agente: ${turn.message}\n`;
+      } else {
+        chatHistory += `Cliente: ${turn.message}\n`;
+      }
+    }
+    
+    // Formato del prompt con instrucciones más claras
     const prompt = `<|system|>
 Eres un asistente especializado en analizar mensajes en un contexto de cobranza. Tu tarea es categorizar la respuesta del cliente.
+
+IMPORTANTE: NUNCA debes mencionar montos específicos de deuda. Habla siempre en términos de "deuda pendiente" o porcentajes, nunca valores monetarios exactos.
 
 El cliente tiene las siguientes características:
 - Relación/Cercanía: ${clientSoul.relationship}/100
@@ -44,8 +53,8 @@ El cliente tiene las siguientes características:
 - Sensibilidad a Presión: ${clientSoul.sensitivity}/100
 - Probabilidad de Pago: ${clientSoul.probability}/100
 
-Historial reciente: 
-${recentHistory}
+Historial reciente de la conversación: 
+${chatHistory}
 <|user|>
 Clasifica este mensaje del cliente: "${message}"
 
@@ -68,11 +77,11 @@ Elige UNA de estas categorías EXACTAS sin explicación:
     const response = await huggingFaceApi.post('', {
       inputs: prompt,
       parameters: {
-        max_new_tokens: 20,         // Reducido para esta tarea específica
-        temperature: 0.1,           // Reducido para respuestas más deterministas
+        max_new_tokens: 20,         
+        temperature: 0.1,           
         top_p: 0.95,
         do_sample: true,
-        return_full_text: false     // Solo queremos la respuesta, no el prompt
+        return_full_text: false     
       }
     });
 
@@ -86,7 +95,7 @@ Elige UNA de estas categorías EXACTAS sin explicación:
       responseText = response.data.generated_text || '';
     }
     
-    // Extraer solo la palabra clave de la respuesta (limpiar texto adicional)
+    // Extraer solo la palabra clave de la respuesta
     let eventType = 'neutral';
     const possibleEvents = [
       'neutral', 'accepts_payment', 'offers_partial', 'reschedule', 
@@ -156,9 +165,9 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
       }
     });
     
-    // Construir un historial de chat reciente para contexto (últimas 3 interacciones)
+    // Construir un historial de chat más completo para contexto
     let chatHistory = '';
-    const recentConversation = conversationHistory.slice(-3);
+    const recentConversation = conversationHistory.slice(-6); // Usar más mensajes para mejor contexto
     
     for (const turn of recentConversation) {
       if (turn.sender === 'agent') {
@@ -176,9 +185,15 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
       tone = clientSoul.sensitivity < 40 ? 'formal directo' : 'formal suave';
     }
     
-    // Formato del prompt para generar respuesta
+    // Formato del prompt para generar respuesta con instrucciones sobre deudas
     const prompt = `<|system|>
 Eres un agente de cobranza de la empresa Acriventas. Tu objetivo es obtener el pago de una deuda pendiente mientras mantienes una buena relación con el cliente.
+
+INSTRUCCIONES IMPORTANTES: 
+1. NUNCA menciones montos específicos de dinero o deuda en tus respuestas.
+2. Siempre habla en términos de "deuda pendiente" o usando porcentajes, no valores exactos.
+3. No repitas los montos que el cliente mencione en sus mensajes.
+4. Sé siempre respetuoso y profesional.
 
 Debes usar un tono "${tone}" basado en el perfil del cliente:
 - Relación/Cercanía: ${clientSoul.relationship}/100
@@ -193,18 +208,18 @@ ${chatHistory}
 El último mensaje del cliente fue: "${lastClientMessage}"
 El tipo de evento detectado es: "${lastEvent}"
 <|user|>
-Genera una respuesta empática y efectiva como agente de cobranza. La respuesta debe ser concisa (máximo 2 frases), adaptada al perfil del cliente, y enfocada en lograr el pago de la deuda.
+Genera una respuesta empática y efectiva como agente de cobranza. La respuesta debe ser concisa (máximo 2 frases), adaptada al perfil del cliente, enfocada en lograr el pago de la deuda, y NUNCA debe mencionar montos específicos de dinero.
 <|assistant|>`;
 
     console.log("Enviando solicitud para generar respuesta a Hugging Face API...");
     const response = await huggingFaceApi.post('', {
       inputs: prompt,
       parameters: {
-        max_new_tokens: 100,        // Límite ajustado para respuestas concisas
-        temperature: 0.7,           // Suficiente creatividad para respuestas naturales
+        max_new_tokens: 100,
+        temperature: 0.7,
         top_p: 0.95,
         do_sample: true,
-        return_full_text: false     // Solo queremos la respuesta generada
+        return_full_text: false
       }
     });
 
@@ -218,12 +233,12 @@ Genera una respuesta empática y efectiva como agente de cobranza. La respuesta 
       responseText = response.data.generated_text || '';
     }
     
-    // Limpiar la respuesta para eliminar cualquier texto adicional no deseado
+    // Limpiar la respuesta
     responseText = responseText.trim();
     
     // Si la respuesta está vacía, usar respuesta por defecto
     if (!responseText) {
-      responseText = "Entiendo. ¿Podría por favor indicarnos cuándo podríamos esperar el pago de su deuda?";
+      responseText = "Entiendo. ¿Podría por favor indicarnos cuándo podríamos esperar el pago de su deuda pendiente?";
     }
 
     console.log(`Respuesta generada por Zephyr usando tono "${tone}": ${responseText}`);
@@ -241,7 +256,7 @@ Genera una respuesta empática y efectiva como agente de cobranza. La respuesta 
   }
 };
 
-// Funciones de fallback (basadas en el sistema anterior) para usar cuando no hay conexión a la API
+// Funciones de fallback mejoradas para usar sin API
 const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) => {
   const messageText = message.toLowerCase();
   
@@ -312,7 +327,7 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
     }
   }
   
-  // Base de respuestas según evento y tono
+  // Base de respuestas según evento y tono (mejorado para evitar mencionar montos)
   const responseTemplates = {
     'accepts_payment': {
       friendly_no_pressure: "¡Excelente noticia! Gracias por tu disposición. Cuando puedas hacer el pago, solo avísame.",
@@ -324,9 +339,9 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
     'offers_partial': {
       friendly_no_pressure: "Agradezco mucho tu esfuerzo por pagar una parte. Cualquier aporte es bienvenido.",
       friendly: "Gracias por tu disposición. Un pago parcial nos ayuda mucho. ¿Cuándo podrías realizar este abono?",
-      formal_direct: "Tomamos nota de su oferta de pago parcial. ¿Cuándo podríamos esperar el resto del monto?",
+      formal_direct: "Tomamos nota de su oferta de pago parcial. ¿Cuándo podríamos esperar el resto del monto pendiente?",
       formal_soft: "Entendemos su situación. El pago parcial es un buen primer paso. ¿Cuándo sería posible?",
-      neutral: "De acuerdo con el pago parcial. ¿Qué monto podría transferir y cuándo?"
+      neutral: "De acuerdo con el pago parcial. ¿Qué porcentaje de la deuda podría transferir y cuándo?"
     },
     'reschedule': {
       friendly_no_pressure: "No hay problema, entiendo que necesitas reprogramar. ¿Qué fecha te resultaría más conveniente?",
@@ -375,7 +390,7 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
       friendly: "Agradezco que estemos en contacto. ¿Hay algo en lo que pueda ayudarte para facilitar el proceso?",
       formal_direct: "Necesitamos regularizar su situación. ¿Podría por favor indicarnos una fecha concreta de pago?",
       formal_soft: "Entendemos que pueden surgir contratiempos. ¿Podría comentarnos cuándo le sería posible realizar el pago?",
-      neutral: "¿Podría por favor indicarnos cuándo podríamos esperar el pago?"
+      neutral: "¿Podría por favor indicarnos cuándo podríamos esperar el pago de la deuda pendiente?"
     }
   };
   
