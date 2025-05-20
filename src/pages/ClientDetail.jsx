@@ -60,12 +60,13 @@ const ClientDetail = () => {
     try {
       setIsLoading(true);
       
-      // Actualizar datos básicos
+      // Actualizar datos básicos, incluyendo el alma
       await updateClient(clientId, {
         name: editedClient.name,
         email: editedClient.email,
         phone: editedClient.phone,
-        notes: editedClient.notes
+        notes: editedClient.notes,
+        soul: editedClient.soul // Incluir el alma en la actualización
       });
       
       // Actualizar monto de deuda si cambió
@@ -226,6 +227,19 @@ const ClientDetail = () => {
                 </div>
               </div>
               
+              {/* Editor de variables del alma */}
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold mb-3">Variables del Alma</h3>
+                <SoulVariablesEditor 
+                  initialValues={editedClient.soul}
+                  onChange={handleSoulChange}
+                  readOnly={false}
+                />
+                <p className="mt-2 text-sm text-gray-500">
+                  Ajuste las variables de relación con el cliente según su conocimiento actual.
+                </p>
+              </div>
+              
               <div className="flex justify-end mt-6">
                 <button 
                   type="submit" 
@@ -352,6 +366,9 @@ const ClientDetail = () => {
               <p>
                 Estas variables representan la disposición y relación del cliente, 
                 y se ajustan automáticamente durante las conversaciones.
+              </p>
+              <p className="mt-2">
+                Para modificar estos valores, utilice el botón "Editar" en la parte superior.
               </p>
             </div>
           </div>

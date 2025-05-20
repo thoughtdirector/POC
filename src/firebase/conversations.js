@@ -264,7 +264,7 @@ export const getActiveConversations = async (agentId = null, limitCount = 10) =>
 };
 
 // Obtener historial de conversaciones (cerradas)
-export const getClosedConversations = async (agentId = null, limitCount = 10) => {
+export const getClosedConversations = async (agentId = null, limitCount = 100) => {
   let q;
   
   if (agentId) {
@@ -290,7 +290,6 @@ export const getClosedConversations = async (agentId = null, limitCount = 10) =>
     ...doc.data()
   }));
 };
-
 // Obtener conversaciones por fecha próxima
 export const getConversationsByNextActionDate = async (limitCount = 10) => {
   const now = new Date();

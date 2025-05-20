@@ -25,6 +25,7 @@ const NewConversation = () => {
   const [suggestedResponse, setSuggestedResponse] = useState('');
   const [clientMessage, setClientMessage] = useState('');
   const [eventType, setEventType] = useState('neutral');
+  const [initialGreeting, setInitialGreeting] = useState('');
   const [suggestedDeltas, setSuggestedDeltas] = useState({
     relationship: 0,
     history: 0,
@@ -47,22 +48,10 @@ const NewConversation = () => {
         const newConversationId = await createConversation(clientId, currentUser.uid, clientData.soul);
         setConversationId(newConversationId);
         
-        const initialGreeting = `Hola ${clientData.name}, le saluda ${currentUser.displayName} de Acriventas. Me comunico con usted respecto a su deuda pendiente de $${clientData.debt.toLocaleString('es-CO')}.`;
-        
-        await addConversationTurn(newConversationId, {
-          sender: 'agent',
-          message: initialGreeting,
-          event: 'neutral'
-        });
-        
-        setTurns([
-          {
-            id: 'initial',
-            sender: 'agent',
-            message: initialGreeting,
-            timestamp: new Date()
-          }
-        ]);
+        // Crear sugerencia de saludo inicial pero no enviarlo automáticamente
+        const greeting = `Hola ${clientData.name}, le saluda ${currentUser.displayName} de Acriventas. Me comunico con usted respecto a su deuda pendiente.`;
+        setInitialGreeting(greeting);
+        setSuggestedResponse(greeting);
         
       } catch (error) {
         console.error('Error al iniciar conversación:', error);
@@ -396,7 +385,8 @@ const NewConversation = () => {
             <div className="space-y-2">
               <p><span className="font-medium">Teléfono:</span> {client.phone}</p>
               <p><span className="font-medium">Email:</span> {client.email || 'No disponible'}</p>
-              <p><span className="font-medium">Deuda:</span> ${client.debt.toLocaleString('es-CO')}</p>
+              <p><span className="font-medium">Estado de deuda:</span> Deuda pendiente</p>
+              <p className="text-sm text-gray-500 mt-2 italic">Nota: Por razones de privacidad, no se muestran montos específicos en este módulo.</p>
             </div>
           </div>
           
