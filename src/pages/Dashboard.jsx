@@ -51,6 +51,21 @@ const Dashboard = () => {
     setNewConversationsFilter(filter);
   };
 
+  const handleConversationDeleted = (deletedId) => {
+    // Actualizar los arrays de conversaciones, filtrando la eliminada
+    setNewConversations(prevConversations => 
+      prevConversations.filter(conv => conv.id !== deletedId)
+    );
+    
+    setActiveConversations(prevConversations => 
+      prevConversations.filter(conv => conv.id !== deletedId)
+    );
+    
+    setHistoricalConversations(prevConversations => 
+      prevConversations.filter(conv => conv.id !== deletedId)
+    );
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
@@ -71,6 +86,7 @@ const Dashboard = () => {
             conversations={newConversations}
             isLoading={isLoading}
             emptyMessage="No hay nuevas conversaciones"
+            onConversationDeleted={handleConversationDeleted}
           />
           
           {/* Conversaciones activas */}
@@ -79,6 +95,7 @@ const Dashboard = () => {
             conversations={activeConversations}
             isLoading={isLoading}
             emptyMessage="No hay conversaciones activas"
+            onConversationDeleted={handleConversationDeleted}
           />
         </div>
         
@@ -89,6 +106,7 @@ const Dashboard = () => {
             conversations={historicalConversations}
             isLoading={isLoading}
             emptyMessage="No hay conversaciones en el historial"
+            onConversationDeleted={handleConversationDeleted}
           />
         </div>
       </div>

@@ -5,12 +5,17 @@ import {
   closeConversation,
   addManualConversationTurn,
   editConversationTurn,
-  deleteConversationTurn
+  deleteConversationTurn,
+  deleteConversation,
+  updateConversationStatus,
+  CONVERSATION_PHASES,
+  CONVERSATION_STATUS
 } from '../firebase/conversations';
 import { generateAgentResponse } from '../services/aiService';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
+import PhaseSelector from '../components/conversations/PhaseSelector';
 
 const ConversationDetail = () => {
   const { conversationId } = useParams();
@@ -23,12 +28,14 @@ const ConversationDetail = () => {
   const [editingTurn, setEditingTurn] = useState(null);
   const [suggestedResponse, setSuggestedResponse] = useState('');
   const [responseAdded, setResponseAdded] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState(CONVERSATION_PHASES.NEGOTIATION);
   
   // Estados para agregar nuevos mensajes
   const [newMessage, setNewMessage] = useState({
     sender: 'agent',
     message: '',
     event: 'neutral',
+    phase: CONVERSATION_PHASES.NEGOTIATION,
     deltas: { relationship: 0, history: 0, attitude: 0, sensitivity: 0, probability: 0 },
     updateClientSoul: false
   });
@@ -49,6 +56,18 @@ const ConversationDetail = () => {
         // Si ya tiene resumen, cargar los datos
         if (conversationData.summary) {
           setSummary(conversationData.summary);
+        }
+        
+        // Determinar la fase actual basada en el último mensaje
+        if (conversationData.turns && conversationData.turns.length > 0) {
+          const lastTurn = conversationData.turns[conversationData.turns.length - 1];
+          if (lastTurn.phase) {
+            setCurrentPhase(lastTurn.phase);
+            setNewMessage(prev => ({
+              ...prev,
+              phase: lastTurn.phase
+            }));
+          }
         }
       } catch (error) {
         console.error('Error al cargar conversación:', error);
@@ -94,6 +113,14 @@ const ConversationDetail = () => {
     }));
   };
   
+  const handlePhaseChange = (phase) => {
+    setCurrentPhase(phase);
+    setNewMessage(prev => ({
+      ...prev,
+      phase
+    }));
+  };
+  
   const handleDeltaChange = (variable, value) => {
     setNewMessage(prev => ({
       ...prev,
@@ -113,6 +140,7 @@ const ConversationDetail = () => {
         sender: newMessage.sender,
         message: newMessage.message,
         event: newMessage.event,
+        phase: newMessage.phase || currentPhase,
         deltas: newMessage.deltas,
         updateClientSoul: newMessage.updateClientSoul
       };
@@ -128,12 +156,13 @@ const ConversationDetail = () => {
         sender: 'agent',
         message: '',
         event: 'neutral',
+        phase: currentPhase,
         deltas: { relationship: 0, history: 0, attitude: 0, sensitivity: 0, probability: 0 },
         updateClientSoul: false
       });
       
       // Si se añade un mensaje del cliente, generar una sugerencia de respuesta
-      if (turnData.sender === 'client' && conversation.status === 'active') {
+      if (turnData.sender === 'client' && updatedConversation.isActive) {
         try {
           const responseResult = await generateAgentResponse(
             updatedConversation.turns,
@@ -156,7 +185,7 @@ const ConversationDetail = () => {
   // Generar sugerencias cuando se cambia un evento
   const handleEventChange = async (newEvent) => {
     // Solo generar sugerencias si la conversación está activa
-    if (conversation && conversation.status === 'active') {
+    if (conversation && conversation.isActive) {
       try {
         // Obtener el último mensaje del cliente (o el mensaje que se está editando)
         const clientMessage = editingTurn 
@@ -189,7 +218,7 @@ const ConversationDetail = () => {
       setConversation(updatedConversation);
       
       // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
-      if (editingTurn.sender === 'client' && conversation.status === 'active') {
+      if (editingTurn.sender === 'client' && conversation.isActive) {
         try {
           const responseResult = await generateAgentResponse(
             updatedConversation.turns,
@@ -226,6 +255,36 @@ const ConversationDetail = () => {
     }
   };
   
+  // Eliminar conversación completa
+  const handleDeleteConversation = async () => {
+    if (window.confirm('¿Está seguro que desea eliminar permanentemente esta conversación? Esta acción no se puede deshacer.')) {
+      try {
+        await deleteConversation(conversationId);
+        navigate('/'); // Redirigir al dashboard
+      } catch (error) {
+        console.error('Error al eliminar conversación:', error);
+        alert('Error al eliminar la conversación: ' + error.message);
+      }
+    }
+  };
+  
+  // Cambiar estado de actividad
+  const handleToggleActive = async () => {
+    try {
+      if (conversation.isActive) {
+        await updateConversationStatus(conversationId, CONVERSATION_STATUS.INACTIVE, false);
+      } else {
+        await updateConversationStatus(conversationId, CONVERSATION_STATUS.ACTIVE, true);
+      }
+      
+      // Recargar la conversación
+      const updatedConversation = await getConversationDetails(conversationId);
+      setConversation(updatedConversation);
+    } catch (error) {
+      console.error('Error al cambiar estado de actividad:', error);
+    }
+  };
+  
   // Usar la respuesta sugerida
   const handleUseSuggestedResponse = () => {
     if (suggestedResponse) {
@@ -242,9 +301,8 @@ const ConversationDetail = () => {
   // Continuar la conversación (botón explícito)
   const handleContinueConversation = () => {
     // Asegurarse de que la conversación esté activa
-    if (conversation && conversation.status !== 'active') {
-      alert("Esta conversación ya ha sido cerrada. No se pueden agregar más mensajes.");
-      return;
+    if (conversation && !conversation.isActive) {
+      handleToggleActive();
     }
     
     // Enfocar el campo de mensaje
@@ -265,6 +323,47 @@ const ConversationDetail = () => {
       // Intentar parsear como string de fecha
       const date = new Date(timestamp);
       return format(date, 'PPp', { locale: es });
+    }
+  };
+  
+  // Agrupar mensajes por fases
+  const getMessagesByPhase = () => {
+    if (!conversation || !conversation.turns) return {};
+    
+    return conversation.turns.reduce((acc, turn) => {
+      const phase = turn.phase || CONVERSATION_PHASES.NEGOTIATION;
+      if (!acc[phase]) {
+        acc[phase] = [];
+      }
+      acc[phase].push(turn);
+      return acc;
+    }, {});
+  };
+  
+  // Ordenar las fases
+  const orderedPhases = [
+    CONVERSATION_PHASES.GREETING,
+    CONVERSATION_PHASES.DEBT_NOTIFICATION,
+    CONVERSATION_PHASES.NEGOTIATION,
+    CONVERSATION_PHASES.PAYMENT_CONFIRMATION,
+    CONVERSATION_PHASES.FAREWELL
+  ];
+  
+  // Obtener nombre legible de fase
+  const getPhaseName = (phase) => {
+    switch (phase) {
+      case CONVERSATION_PHASES.GREETING:
+        return "Fase 1: Saludo";
+      case CONVERSATION_PHASES.DEBT_NOTIFICATION:
+        return "Fase 2: Comunicación de deuda";
+      case CONVERSATION_PHASES.NEGOTIATION:
+        return "Fase 3: Negociación";
+      case CONVERSATION_PHASES.PAYMENT_CONFIRMATION:
+        return "Fase 4: Concretar pago";
+      case CONVERSATION_PHASES.FAREWELL:
+        return "Fase 5: Despedida";
+      default:
+        return "Fase desconocida";
     }
   };
   
@@ -298,6 +397,8 @@ const ConversationDetail = () => {
     );
   }
   
+  const messagesByPhase = getMessagesByPhase();
+  
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex justify-between items-center mb-6">
@@ -306,9 +407,9 @@ const ConversationDetail = () => {
           <p className="text-gray-500">
             Iniciada el {formatDate(conversation.startedAt)}
             <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
-              conversation.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+              conversation.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
             }`}>
-              {conversation.status === 'active' ? 'Activa' : 'Cerrada'}
+              {conversation.isActive ? 'Activa' : 'Inactiva'}
             </span>
           </p>
         </div>
@@ -322,8 +423,16 @@ const ConversationDetail = () => {
             {isEditing ? 'Salir de Edición' : 'Editar Conversación'}
           </button>
           
+          {/* Botón para activar/desactivar conversación */}
+          <button 
+            className={`btn-secondary ${conversation.isActive ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}
+            onClick={handleToggleActive}
+          >
+            {conversation.isActive ? 'Desactivar' : 'Activar'}
+          </button>
+          
           {/* Botón para continuar la conversación */}
-          {conversation.status === 'active' && (
+          {!conversation.isActive && (
             <button 
               className="btn-secondary"
               onClick={handleContinueConversation}
@@ -333,7 +442,7 @@ const ConversationDetail = () => {
           )}
           
           {/* Botón para cerrar la conversación - solo visible si está activa */}
-          {conversation.status === 'active' && (
+          {conversation.status !== CONVERSATION_STATUS.CLOSED && (
             <button 
               className="btn-primary"
               onClick={() => setIsClosing(true)}
@@ -342,7 +451,15 @@ const ConversationDetail = () => {
             </button>
           )}
           
-          {/* Botón para volver - nunca finaliza la conversación */}
+          {/* Botón para eliminar conversación */}
+          <button 
+            className="btn-secondary bg-red-600 text-white hover:bg-red-700"
+            onClick={handleDeleteConversation}
+          >
+            Eliminar
+          </button>
+          
+          {/* Botón para volver */}
           <button 
             className="btn-secondary"
             onClick={() => navigate(-1)}
@@ -366,93 +483,106 @@ const ConversationDetail = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
-          {/* Historial de mensajes */}
+          {/* Historial de mensajes por fases */}
           <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">Mensajes</h2>
+            <h2 className="text-lg font-semibold mb-4">Mensajes por Fases</h2>
             
-            {conversation.turns && conversation.turns.length > 0 ? (
-              <div className="space-y-4">
-                {conversation.turns.map((turn, index) => (
-                  <div 
-                    key={turn.id || index}
-                    className={`flex ${
-                      turn.sender === 'agent' ? 'justify-end' : 'justify-start'
-                    }`}
-                  >
-                    <div 
-                      className={`rounded-lg px-4 py-2 max-w-[80%] relative ${
-                        turn.sender === 'agent' 
-                          ? 'bg-primary-100 text-primary-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {/* Botones de edición (solo en modo edición) */}
-                      {isEditing && (
-                        <div className="absolute top-1 right-1 flex gap-1">
-                          <button
-                            className="text-xs text-blue-600 hover:text-blue-800"
-                            onClick={() => setEditingTurn(turn)}
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            className="text-xs text-red-600 hover:text-red-800"
-                            onClick={() => handleDeleteTurn(turn.id)}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      )}
-                      
-                      {editingTurn && editingTurn.id === turn.id ? (
-                        <EditTurnForm 
-                          turn={turn}
-                          onSave={(updatedData) => handleEditTurn(turn.id, updatedData)}
-                          onCancel={() => setEditingTurn(null)}
-                          onEventChange={handleEventChange}
-                        />
-                      ) : (
-                        <>
-                          <p>{turn.message}</p>
-                          <div className="text-xs text-gray-500 mt-1 flex justify-between">
-                            <span>{formatDate(turn.timestamp)}</span>
-                            {turn.isManual && <span className="text-blue-500">Manual</span>}
-                            {turn.isEdited && <span className="text-orange-500">Editado</span>}
-                          </div>
-                          
-                          {turn.event && turn.event !== 'neutral' && (
-                            <div className="mt-2 text-xs">
-                              <span className="font-medium">Evento: </span>
-                              <span>{turn.event}</span>
-                              
-                              {turn.deltas && (
-                                <div className="mt-1 grid grid-cols-5 gap-1">
-                                  <span className={`${turn.deltas.relationship > 0 ? 'text-green-600' : turn.deltas.relationship < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                    R: {turn.deltas.relationship > 0 ? '+' : ''}{turn.deltas.relationship}
-                                  </span>
-                                  <span className={`${turn.deltas.history > 0 ? 'text-green-600' : turn.deltas.history < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                    H: {turn.deltas.history > 0 ? '+' : ''}{turn.deltas.history}
-                                  </span>
-                                  <span className={`${turn.deltas.attitude > 0 ? 'text-green-600' : turn.deltas.attitude < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                    A: {turn.deltas.attitude > 0 ? '+' : ''}{turn.deltas.attitude}
-                                  </span>
-                                  <span className={`${turn.deltas.sensitivity > 0 ? 'text-green-600' : turn.deltas.sensitivity < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                    S: {turn.deltas.sensitivity > 0 ? '+' : ''}{turn.deltas.sensitivity}
-                                  </span>
-                                  <span className={`${turn.deltas.probability > 0 ? 'text-green-600' : turn.deltas.probability < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                    P: {turn.deltas.probability > 0 ? '+' : ''}{turn.deltas.probability}
-                                  </span>
-                                </div>
-                              )}
+            {orderedPhases.map(phase => {
+              const phaseTurns = messagesByPhase[phase] || [];
+              if (phaseTurns.length === 0) return null;
+              
+              return (
+                <div key={phase} className="mb-6">
+                  <h3 className="text-md font-semibold mb-2 bg-gray-100 p-2 rounded">
+                    {getPhaseName(phase)}
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    {phaseTurns.map((turn) => (
+                      <div 
+                        key={turn.id}
+                        className={`flex ${
+                          turn.sender === 'agent' ? 'justify-end' : 'justify-start'
+                        }`}
+                      >
+                        <div 
+                          className={`rounded-lg px-4 py-2 max-w-[80%] relative ${
+                            turn.sender === 'agent' 
+                              ? 'bg-primary-100 text-primary-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {/* Botones de edición (solo en modo edición) */}
+                          {isEditing && (
+                            <div className="absolute top-1 right-1 flex gap-1">
+                              <button
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                                onClick={() => setEditingTurn(turn)}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                className="text-xs text-red-600 hover:text-red-800"
+                                onClick={() => handleDeleteTurn(turn.id)}
+                              >
+                                🗑️
+                              </button>
                             </div>
                           )}
-                        </>
-                      )}
-                    </div>
+                          
+                          {editingTurn && editingTurn.id === turn.id ? (
+                            <EditTurnForm 
+                              turn={turn}
+                              onSave={(updatedData) => handleEditTurn(turn.id, updatedData)}
+                              onCancel={() => setEditingTurn(null)}
+                              onEventChange={handleEventChange}
+                            />
+                          ) : (
+                            <>
+                              <p>{turn.message}</p>
+                              <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                                <span>{formatDate(turn.timestamp)}</span>
+                                {turn.isManual && <span className="text-blue-500">Manual</span>}
+                                {turn.isEdited && <span className="text-orange-500">Editado</span>}
+                              </div>
+                              
+                              {turn.event && turn.event !== 'neutral' && (
+                                <div className="mt-2 text-xs">
+                                  <span className="font-medium">Evento: </span>
+                                  <span>{turn.event}</span>
+                                  
+                                  {turn.deltas && (
+                                    <div className="mt-1 grid grid-cols-5 gap-1">
+                                      <span className={`${turn.deltas.relationship > 0 ? 'text-green-600' : turn.deltas.relationship < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                        R: {turn.deltas.relationship > 0 ? '+' : ''}{turn.deltas.relationship}
+                                      </span>
+                                      <span className={`${turn.deltas.history > 0 ? 'text-green-600' : turn.deltas.history < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                        H: {turn.deltas.history > 0 ? '+' : ''}{turn.deltas.history}
+                                      </span>
+                                      <span className={`${turn.deltas.attitude > 0 ? 'text-green-600' : turn.deltas.attitude < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                        A: {turn.deltas.attitude > 0 ? '+' : ''}{turn.deltas.attitude}
+                                      </span>
+                                      <span className={`${turn.deltas.sensitivity > 0 ? 'text-green-600' : turn.deltas.sensitivity < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                        S: {turn.deltas.sensitivity > 0 ? '+' : ''}{turn.deltas.sensitivity}
+                                      </span>
+                                      <span className={`${turn.deltas.probability > 0 ? 'text-green-600' : turn.deltas.probability < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                        P: {turn.deltas.probability > 0 ? '+' : ''}{turn.deltas.probability}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : (
+                </div>
+              );
+            })}
+            
+            {(!conversation.turns || conversation.turns.length === 0) && (
               <p className="text-gray-500 text-center py-4">
                 No hay mensajes en esta conversación.
               </p>
@@ -479,12 +609,17 @@ const ConversationDetail = () => {
               </div>
             )}
             
-            {/* Formulario para agregar nuevos mensajes (siempre visible si la conversación está activa) */}
-            {conversation.status === 'active' && (
+            {/* Formulario para agregar nuevos mensajes (solo visible si la conversación está activa) */}
+            {conversation.isActive && (
               <div className="mt-6 p-4 border-t border-gray-200">
                 <h3 className="text-md font-semibold mb-3">Agregar Nuevo Mensaje</h3>
                 
                 <div className="space-y-4">
+                  <PhaseSelector 
+                    phase={currentPhase}
+                    onChange={handlePhaseChange}
+                  />
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -634,12 +769,12 @@ const ConversationDetail = () => {
               </div>
             )}
             
-            {/* Mensaje indicando que la conversación está cerrada */}
-            {conversation.status !== 'active' && (
+            {/* Mensaje indicando que la conversación no está activa */}
+            {!conversation.isActive && (
               <div className="mt-6 p-4 border-t border-gray-200">
                 <div className="bg-gray-50 p-4 rounded-md text-center">
                   <p className="text-gray-600">
-                    Esta conversación ha sido cerrada. No se pueden agregar más mensajes.
+                    Esta conversación no está activa. Pulse "Activar" si desea añadir más mensajes.
                   </p>
                 </div>
               </div>
@@ -647,7 +782,7 @@ const ConversationDetail = () => {
           </div>
           
           {/* Resumen de conversación */}
-          {conversation.status === 'closed' && conversation.summary && (
+          {conversation.status === CONVERSATION_STATUS.CLOSED && conversation.summary && (
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-lg font-semibold mb-4">Resumen de la Conversación</h2>
               
@@ -893,6 +1028,7 @@ const EditTurnForm = ({ turn, onSave, onCancel, onEventChange }) => {
   const [editData, setEditData] = useState({
     message: turn.message,
     event: turn.event || 'neutral',
+    phase: turn.phase || CONVERSATION_PHASES.NEGOTIATION,
     deltas: turn.deltas || { relationship: 0, history: 0, attitude: 0, sensitivity: 0, probability: 0 }
   });
   
@@ -907,6 +1043,13 @@ const EditTurnForm = ({ turn, onSave, onCancel, onEventChange }) => {
     setEditData(prev => ({
       ...prev,
       [name]: value
+    }));
+  };
+  
+  const handlePhaseChange = (phase) => {
+    setEditData(prev => ({
+      ...prev,
+      phase
     }));
   };
   
@@ -938,6 +1081,24 @@ const EditTurnForm = ({ turn, onSave, onCancel, onEventChange }) => {
           value={editData.message}
           onChange={handleChange}
         ></textarea>
+      </div>
+      
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          Fase
+        </label>
+        <select
+          name="phase"
+          className="w-full text-sm border border-gray-300 rounded px-2 py-1"
+          value={editData.phase}
+          onChange={(e) => handlePhaseChange(e.target.value)}
+        >
+          <option value={CONVERSATION_PHASES.GREETING}>Fase 1: Saludo</option>
+          <option value={CONVERSATION_PHASES.DEBT_NOTIFICATION}>Fase 2: Comunicación de deuda</option>
+          <option value={CONVERSATION_PHASES.NEGOTIATION}>Fase 3: Negociación</option>
+          <option value={CONVERSATION_PHASES.PAYMENT_CONFIRMATION}>Fase 4: Concretar pago</option>
+          <option value={CONVERSATION_PHASES.FAREWELL}>Fase 5: Despedida</option>
+        </select>
       </div>
       
       <div>

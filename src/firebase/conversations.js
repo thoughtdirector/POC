@@ -4,16 +4,34 @@ import {
   addDoc, 
   getDoc, 
   getDocs, 
-  updateDoc, 
+  updateDoc,
+  deleteDoc,
   query, 
   where,
   orderBy,
-  limit as firestoreLimit,  // Renombrado para evitar conflictos
+  limit as firestoreLimit,
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from './config';
 import { v4 as uuidv4 } from 'uuid';
 import { recordClientContact } from './clients';
+
+// Fases de la conversación
+export const CONVERSATION_PHASES = {
+  GREETING: 'greeting',           // Fase 1 (Saludo)
+  DEBT_NOTIFICATION: 'debt_notification', // Fase 2 (Comunicación de deuda)
+  NEGOTIATION: 'negotiation',     // Fase 3 (Negociación)
+  PAYMENT_CONFIRMATION: 'payment_confirmation', // Fase 4 (Concretar pago)
+  FAREWELL: 'farewell'           // Fase 5 (Despedida)
+};
+
+// Estado de la conversación
+export const CONVERSATION_STATUS = {
+  NEW: 'new',
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  CLOSED: 'closed'
+};
 
 // Matriz de deltas según tipo de evento
 export const EVENT_DELTAS = {
@@ -51,7 +69,8 @@ export const createConversation = async (clientId, agentId, initialSoulValues) =
     agentId,
     startedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    status: 'new',  // Cambiado de 'active' a 'new'
+    status: CONVERSATION_STATUS.NEW,
+    isActive: true,
     initialSoul: initialSoulValues || client.soul,
     currentSoul: initialSoulValues || client.soul,
     turns: [],
@@ -94,13 +113,13 @@ export const addConversationTurn = async (conversationId, turnData) => {
   }
   
   // Crear el nuevo turno con un timestamp JavaScript normal
-  // en lugar de serverTimestamp() para evitar el error
   const now = new Date();
   const newTurn = { 
     id: uuidv4(),
-    timestamp: now,  // Usando Date JavaScript normal
-    timestampMillis: now.getTime(),  // Añadir timestamp en milisegundos para ordenar
+    timestamp: now,
+    timestampMillis: now.getTime(),
     ...turnData,
+    phase: turnData.phase || CONVERSATION_PHASES.NEGOTIATION,
     deltas,
     currentSoul
   };
@@ -108,10 +127,16 @@ export const addConversationTurn = async (conversationId, turnData) => {
   // Añadir el turno a la conversación
   const turns = [...conversation.turns, newTurn];
   
+  // Si la conversación es nueva, cambiarla a activa
+  const status = conversation.status === CONVERSATION_STATUS.NEW ? 
+    CONVERSATION_STATUS.ACTIVE : conversation.status;
+  
   await updateDoc(conversationRef, { 
     turns,
     currentSoul,
-    updatedAt: serverTimestamp()  // Solo usar serverTimestamp en campos de nivel superior
+    status,
+    isActive: true,
+    updatedAt: serverTimestamp()
   });
   
   // Si es el cliente quien habla, actualizar su alma en la colección de clientes
@@ -186,7 +211,8 @@ export const closeConversation = async (conversationId, summary) => {
   
   // Actualizar la conversación con el resumen y marcarla como cerrada
   await updateDoc(conversationRef, {
-    status: 'closed',
+    status: CONVERSATION_STATUS.CLOSED,
+    isActive: false,
     closedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     summary: {
@@ -214,7 +240,7 @@ export const getNewConversations = async (agentId = null, limitCount = 10) => {
   if (agentId) {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'new'),
+      where('status', '==', CONVERSATION_STATUS.NEW),
       where('agentId', '==', agentId),
       orderBy('startedAt', 'desc'),
       firestoreLimit(limitCount)
@@ -222,7 +248,7 @@ export const getNewConversations = async (agentId = null, limitCount = 10) => {
   } else {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'new'),
+      where('status', '==', CONVERSATION_STATUS.NEW),
       orderBy('startedAt', 'desc'),
       firestoreLimit(limitCount)
     );
@@ -242,7 +268,8 @@ export const getActiveConversations = async (agentId = null, limitCount = 10) =>
   if (agentId) {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'active'),
+      where('status', '==', CONVERSATION_STATUS.ACTIVE),
+      where('isActive', '==', true),
       where('agentId', '==', agentId),
       orderBy('startedAt', 'desc'),
       firestoreLimit(limitCount)
@@ -250,11 +277,29 @@ export const getActiveConversations = async (agentId = null, limitCount = 10) =>
   } else {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'active'),
+      where('status', '==', CONVERSATION_STATUS.ACTIVE),
+      where('isActive', '==', true),
       orderBy('startedAt', 'desc'),
       firestoreLimit(limitCount)
     );
   }
+  
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+};
+
+// Obtener conversaciones activas por cliente
+export const getActiveConversationsByClient = async (clientId) => {
+  const q = query(
+    collection(db, 'conversations'),
+    where('clientId', '==', clientId),
+    where('isActive', '==', true),
+    where('status', 'in', [CONVERSATION_STATUS.NEW, CONVERSATION_STATUS.ACTIVE]),
+    orderBy('updatedAt', 'desc')
+  );
   
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({
@@ -270,7 +315,7 @@ export const getClosedConversations = async (agentId = null, limitCount = 100) =
   if (agentId) {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'closed'),
+      where('status', '==', CONVERSATION_STATUS.CLOSED),
       where('agentId', '==', agentId),
       orderBy('closedAt', 'desc'),
       firestoreLimit(limitCount)
@@ -278,7 +323,7 @@ export const getClosedConversations = async (agentId = null, limitCount = 100) =
   } else {
     q = query(
       collection(db, 'conversations'),
-      where('status', '==', 'closed'),
+      where('status', '==', CONVERSATION_STATUS.CLOSED),
       orderBy('closedAt', 'desc'),
       firestoreLimit(limitCount)
     );
@@ -290,12 +335,14 @@ export const getClosedConversations = async (agentId = null, limitCount = 100) =
     ...doc.data()
   }));
 };
+
 // Obtener conversaciones por fecha próxima
 export const getConversationsByNextActionDate = async (limitCount = 10) => {
   const now = new Date();
   const q = query(
     collection(db, 'conversations'),
-    where('status', '==', 'active'),
+    where('status', '==', CONVERSATION_STATUS.ACTIVE),
+    where('isActive', '==', true),
     where('nextActionDate', '>=', now),
     orderBy('nextActionDate', 'asc'),
     firestoreLimit(limitCount)
@@ -352,6 +399,99 @@ export const updateConversationSoulValues = async (conversationId, soulValues) =
   }
 };
 
+// Eliminar una conversación (hard delete)
+export const deleteConversation = async (conversationId) => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  const conversationDoc = await getDoc(conversationRef);
+  
+  if (!conversationDoc.exists()) {
+    throw new Error('Conversación no encontrada');
+  }
+  
+  // Eliminar físicamente el documento
+  await deleteDoc(conversationRef);
+  
+  return conversationId;
+};
+
+// Cambiar el estado de actividad de una conversación
+export const updateConversationStatus = async (conversationId, newStatus, isActive = true) => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  const conversationDoc = await getDoc(conversationRef);
+  
+  if (!conversationDoc.exists()) {
+    throw new Error('Conversación no encontrada');
+  }
+  
+  // Validar que sea un estado válido
+  if (!Object.values(CONVERSATION_STATUS).includes(newStatus)) {
+    throw new Error('Estado de conversación no válido');
+  }
+  
+  await updateDoc(conversationRef, {
+    status: newStatus,
+    isActive: isActive,
+    updatedAt: serverTimestamp()
+  });
+  
+  return conversationId;
+};
+
+// Función para editar un turno existente
+export const editConversationTurn = async (conversationId, turnId, updatedTurnData) => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  const conversationDoc = await getDoc(conversationRef);
+  
+  if (!conversationDoc.exists()) {
+    throw new Error('Conversación no encontrada');
+  }
+  
+  const conversation = conversationDoc.data();
+  
+  // Encontrar y actualizar el turno
+  const turns = conversation.turns.map(turn => {
+    if (turn.id === turnId) {
+      return {
+        ...turn,
+        ...updatedTurnData,
+        phase: updatedTurnData.phase || turn.phase,
+        isEdited: true,
+        editedAt: new Date()
+      };
+    }
+    return turn;
+  });
+  
+  await updateDoc(conversationRef, { 
+    turns,
+    updatedAt: serverTimestamp()
+  });
+  
+  return turns;
+};
+
+// Función para eliminar un turno
+export const deleteConversationTurn = async (conversationId, turnId) => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  const conversationDoc = await getDoc(conversationRef);
+  
+  if (!conversationDoc.exists()) {
+    throw new Error('Conversación no encontrada');
+  }
+  
+  const conversation = conversationDoc.data();
+  
+  // Filtrar el turno a eliminar
+  const turns = conversation.turns.filter(turn => turn.id !== turnId);
+  
+  await updateDoc(conversationRef, { 
+    turns,
+    updatedAt: serverTimestamp()
+  });
+  
+  return turns;
+};
+
 // Sugerir respuesta (preparado para integración con Gemini)
 export const suggestResponse = async (conversationId, currentTurn) => {
   // En el futuro, aquí se integrará con la API de Gemini
@@ -399,47 +539,7 @@ export const suggestResponse = async (conversationId, currentTurn) => {
   };
 };
 
-// Sugerir deltas (preparado para integración con Gemini)
-export const suggestDeltas = async (conversationId, clientMessage) => {
-  // Esta función se integrará con Gemini para sugerir clasificación de eventos
-  // Por ahora, implementamos una lógica simple basada en palabras clave
-  
-  const message = clientMessage.toLowerCase();
-  
-  // Detección simple basada en palabras clave
-  let suggestedEvent = 'neutral';
-  
-  if (message.includes('pagar') || message.includes('transferir') || message.includes('depositar')) {
-    if (message.includes('completo') || message.includes('todo')) {
-      suggestedEvent = 'accepts_payment';
-    } else if (message.includes('parte') || message.includes('parcial') || message.includes('algo')) {
-      suggestedEvent = 'offers_partial';
-    } else if (message.includes('próxima') || message.includes('después') || message.includes('luego')) {
-      suggestedEvent = 'reschedule';
-    }
-  } else if (message.includes('gracias') || message.includes('agradezco')) {
-    suggestedEvent = 'thanks';
-  } else if (message.includes('ya pagué') || message.includes('realicé el pago') || message.includes('transferí')) {
-    suggestedEvent = 'confirms_payment';
-  } else if (message.includes('no puedo') || message.includes('imposible')) {
-    suggestedEvent = 'evades';
-  } else if (message.includes('molesto') || message.includes('harto') || message.includes('fastidio')) {
-    suggestedEvent = 'annoyed';
-  } else if (message.includes('no voy a pagar') || message.includes('no pagaré') || message.includes('olvídate')) {
-    suggestedEvent = 'refuses';
-  }
-  
-  // Obtener los deltas correspondientes al evento
-  const deltas = EVENT_DELTAS[suggestedEvent] || EVENT_DELTAS.neutral;
-  
-  // En el futuro, esta lógica será reemplazada por la llamada a Gemini
-  return {
-    suggestedEvent,
-    suggestedDeltas: deltas,
-    aiExplanation: `Evento detectado: "${suggestedEvent}" basado en palabras clave.`
-  };
-};
-
+// Añadir un turno manual
 export const addManualConversationTurn = async (conversationId, turnData) => {
   const conversationRef = doc(db, 'conversations', conversationId);
   const conversationDoc = await getDoc(conversationRef);
@@ -477,9 +577,10 @@ export const addManualConversationTurn = async (conversationId, turnData) => {
     timestamp: now,
     timestampMillis: now.getTime(),
     ...turnData,
+    phase: turnData.phase || CONVERSATION_PHASES.NEGOTIATION,
     deltas,
     currentSoul,
-    isManual: true  // Marcar como turno manual
+    isManual: true
   };
   
   // Añadir el turno a la conversación
@@ -502,58 +603,4 @@ export const addManualConversationTurn = async (conversationId, turnData) => {
   }
   
   return { turns, currentSoul };
-};
-
-// Función para editar un turno existente
-export const editConversationTurn = async (conversationId, turnId, updatedTurnData) => {
-  const conversationRef = doc(db, 'conversations', conversationId);
-  const conversationDoc = await getDoc(conversationRef);
-  
-  if (!conversationDoc.exists()) {
-    throw new Error('Conversación no encontrada');
-  }
-  
-  const conversation = conversationDoc.data();
-  
-  // Encontrar y actualizar el turno
-  const turns = conversation.turns.map(turn => {
-    if (turn.id === turnId) {
-      return {
-        ...turn,
-        ...updatedTurnData,
-        isEdited: true,  // Marcar como editado
-        editedAt: new Date()
-      };
-    }
-    return turn;
-  });
-  
-  await updateDoc(conversationRef, { 
-    turns,
-    updatedAt: serverTimestamp()
-  });
-  
-  return turns;
-};
-
-// Función para eliminar un turno
-export const deleteConversationTurn = async (conversationId, turnId) => {
-  const conversationRef = doc(db, 'conversations', conversationId);
-  const conversationDoc = await getDoc(conversationRef);
-  
-  if (!conversationDoc.exists()) {
-    throw new Error('Conversación no encontrada');
-  }
-  
-  const conversation = conversationDoc.data();
-  
-  // Filtrar el turno a eliminar
-  const turns = conversation.turns.filter(turn => turn.id !== turnId);
-  
-  await updateDoc(conversationRef, { 
-    turns,
-    updatedAt: serverTimestamp()
-  });
-  
-  return turns;
 };

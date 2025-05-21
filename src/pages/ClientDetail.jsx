@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getClientById, updateClient, updateClientDebt } from '../firebase/clients';
-import { getConversationsByClient } from '../firebase/conversations';
+import { 
+  getConversationsByClient, 
+  getActiveConversationsByClient
+} from '../firebase/conversations';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -11,7 +14,8 @@ const ClientDetail = () => {
   const navigate = useNavigate();
   
   const [client, setClient] = useState(null);
-  const [conversations, setConversations] = useState([]);
+  const [activeConversations, setActiveConversations] = useState([]);
+  const [inactiveConversations, setInactiveConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedClient, setEditedClient] = useState(null);
@@ -26,9 +30,19 @@ const ClientDetail = () => {
         setClient(clientData);
         setEditedClient(clientData);
         
-        // Cargar conversaciones recientes
-        const recentConversations = await getConversationsByClient(clientId);
-        setConversations(recentConversations);
+        // Cargar conversaciones activas y cerradas
+        const activeConvos = await getActiveConversationsByClient(clientId);
+        const allConvos = await getConversationsByClient(clientId, 10);
+        
+        setActiveConversations(activeConvos);
+        
+        // Filtrar para mostrar solo las conversaciones inactivas/cerradas
+        const inactiveConvos = allConvos.filter(
+          conv => !conv.isActive
+        );
+        
+        setInactiveConversations(inactiveConvos);
+        
       } catch (error) {
         console.error('Error al cargar datos del cliente:', error);
       } finally {
@@ -285,17 +299,72 @@ const ClientDetail = () => {
             </div>
           )}
           
-          {/* Historial de conversaciones */}
+          {/* Conversaciones activas */}
           <div className="bg-white rounded-lg shadow p-6 mt-6">
-            <h2 className="text-lg font-semibold mb-4">Conversaciones Recientes</h2>
+            <h2 className="text-lg font-semibold mb-4">Conversaciones Activas</h2>
             
-            {conversations.length === 0 ? (
+            {activeConversations.length === 0 ? (
               <p className="text-gray-500 text-center py-4">
-                No hay conversaciones registradas con este cliente.
+                No hay conversaciones activas con este cliente.
               </p>
             ) : (
               <ul className="divide-y divide-gray-200">
-                {conversations.map((conversation) => {
+                {activeConversations.map((conversation) => {
+                  const startDate = conversation.startedAt ? 
+                    format(new Date(conversation.startedAt.seconds * 1000), 'PPp', { locale: es }) : 
+                    'Fecha desconocida';
+                    
+                  const lastTurn = conversation.turns && conversation.turns.length > 0 ?
+                    conversation.turns[conversation.turns.length - 1] : null;
+                  
+                  return (
+                    <li 
+                      key={conversation.id} 
+                      className="py-3 cursor-pointer hover:bg-gray-50"
+                      onClick={() => navigate(`/conversation/${conversation.id}`)}
+                    >
+                      <div className="flex justify-between">
+                        <span className="font-medium">Conversación del {startDate}</span>
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Activa
+                        </span>
+                      </div>
+                      
+                      {lastTurn && (
+                        <p className="text-sm text-gray-600 mt-1 truncate">
+                          <span className="font-medium">
+                            {lastTurn.sender === 'agent' ? 'Agente: ' : 'Cliente: '}
+                          </span>
+                          {lastTurn.message}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            
+            <div className="mt-4">
+              <button 
+                className="btn-primary"
+                onClick={startNewConversation}
+              >
+                Iniciar Nueva Conversación
+              </button>
+            </div>
+          </div>
+          
+          {/* Historial de conversaciones */}
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <h2 className="text-lg font-semibold mb-4">Historial de Conversaciones</h2>
+            
+            {inactiveConversations.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">
+                No hay conversaciones en el historial.
+              </p>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {inactiveConversations.map((conversation) => {
                   const startDate = conversation.startedAt ? 
                     format(new Date(conversation.startedAt.seconds * 1000), 'PPp', { locale: es }) : 
                     'Fecha desconocida';
@@ -312,10 +381,10 @@ const ClientDetail = () => {
                       <div className="flex justify-between">
                         <span className="font-medium">Conversación del {startDate}</span>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          conversation.status === 'closed' ? 'bg-green-100 text-green-800' : 
+                          conversation.status === 'closed' ? 'bg-gray-100 text-gray-800' : 
                           'bg-blue-100 text-blue-800'
                         }`}>
-                          {conversation.status === 'closed' ? 'Finalizada' : 'Activa'}
+                          {conversation.status === 'closed' ? 'Finalizada' : 'Inactiva'}
                         </span>
                       </div>
                       
@@ -339,15 +408,6 @@ const ClientDetail = () => {
                 })}
               </ul>
             )}
-            
-            <div className="mt-4">
-              <button 
-                className="text-primary-600 text-sm font-medium hover:text-primary-800"
-                onClick={() => navigate(`/client/${clientId}/conversations`)}
-              >
-                Ver todas las conversaciones
-              </button>
-            </div>
           </div>
         </div>
         

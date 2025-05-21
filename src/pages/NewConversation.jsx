@@ -5,10 +5,12 @@ import { getClientById } from '../firebase/clients';
 import { 
   createConversation, 
   addConversationTurn, 
-  updateConversationSoulValues 
+  updateConversationSoulValues,
+  CONVERSATION_PHASES 
 } from '../firebase/conversations';
 import { analyzeClientMessage, generateAgentResponse } from '../services/aiService';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
+import PhaseSelector from '../components/conversations/PhaseSelector';
 
 const NewConversation = () => {
   const { clientId } = useParams();
@@ -26,6 +28,7 @@ const NewConversation = () => {
   const [clientMessage, setClientMessage] = useState('');
   const [eventType, setEventType] = useState('neutral');
   const [initialGreeting, setInitialGreeting] = useState('');
+  const [currentPhase, setCurrentPhase] = useState(CONVERSATION_PHASES.GREETING);
   const [suggestedDeltas, setSuggestedDeltas] = useState({
     relationship: 0,
     history: 0,
@@ -77,6 +80,7 @@ const NewConversation = () => {
         id: `agent-${Date.now()}`,
         sender: 'agent',
         message,
+        phase: currentPhase,
         timestamp: new Date()
       };
       
@@ -85,10 +89,16 @@ const NewConversation = () => {
       await addConversationTurn(conversationId, {
         sender: 'agent',
         message,
+        phase: currentPhase,
         event: 'neutral'
       });
       
       setMessage('');
+      
+      // Avanzar automáticamente a la siguiente fase si estamos en saludo
+      if (currentPhase === CONVERSATION_PHASES.GREETING) {
+        setCurrentPhase(CONVERSATION_PHASES.DEBT_NOTIFICATION);
+      }
     } catch (error) {
       console.error('Error al enviar mensaje:', error);
     } finally {
@@ -121,6 +131,7 @@ const NewConversation = () => {
         id: `client-${Date.now()}`,
         sender: 'client',
         message: clientMessage,
+        phase: currentPhase,
         timestamp: new Date(),
         event: eventType
       };
@@ -130,6 +141,7 @@ const NewConversation = () => {
       const result = await addConversationTurn(conversationId, {
         sender: 'client',
         message: clientMessage,
+        phase: currentPhase,
         event: eventType
       });
       
@@ -153,6 +165,16 @@ const NewConversation = () => {
         sensitivity: 0,
         probability: 0
       });
+      
+      // Avanzar automáticamente de fase si el cliente acepta pagar
+      if (eventType === 'accepts_payment' && currentPhase === CONVERSATION_PHASES.NEGOTIATION) {
+        setCurrentPhase(CONVERSATION_PHASES.PAYMENT_CONFIRMATION);
+      }
+      
+      // Avanzar automáticamente a despedida si confirma el pago
+      if (eventType === 'confirms_payment' && currentPhase === CONVERSATION_PHASES.PAYMENT_CONFIRMATION) {
+        setCurrentPhase(CONVERSATION_PHASES.FAREWELL);
+      }
       
     } catch (error) {
       console.error('Error al agregar mensaje del cliente:', error);
@@ -179,6 +201,10 @@ const NewConversation = () => {
     };
     
     setSuggestedDeltas(EVENT_DELTAS[newEventType] || EVENT_DELTAS.neutral);
+  };
+  
+  const handlePhaseChange = (phase) => {
+    setCurrentPhase(phase);
   };
   
   const handleUseSuggestedResponse = () => {
@@ -230,6 +256,43 @@ const NewConversation = () => {
     );
   }
   
+  // Agrupar los mensajes por fases
+  const messagesByPhase = turns.reduce((acc, turn) => {
+    const phase = turn.phase || CONVERSATION_PHASES.NEGOTIATION;
+    if (!acc[phase]) {
+      acc[phase] = [];
+    }
+    acc[phase].push(turn);
+    return acc;
+  }, {});
+  
+  // Obtener fases ordenadas
+  const orderedPhases = [
+    CONVERSATION_PHASES.GREETING,
+    CONVERSATION_PHASES.DEBT_NOTIFICATION,
+    CONVERSATION_PHASES.NEGOTIATION,
+    CONVERSATION_PHASES.PAYMENT_CONFIRMATION,
+    CONVERSATION_PHASES.FAREWELL
+  ];
+  
+  // Obtener nombre legible de fase
+  const getPhaseName = (phase) => {
+    switch (phase) {
+      case CONVERSATION_PHASES.GREETING:
+        return "Fase 1: Saludo";
+      case CONVERSATION_PHASES.DEBT_NOTIFICATION:
+        return "Fase 2: Comunicación de deuda";
+      case CONVERSATION_PHASES.NEGOTIATION:
+        return "Fase 3: Negociación";
+      case CONVERSATION_PHASES.PAYMENT_CONFIRMATION:
+        return "Fase 4: Concretar pago";
+      case CONVERSATION_PHASES.FAREWELL:
+        return "Fase 5: Despedida";
+      default:
+        return "Fase desconocida";
+    }
+  };
+  
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="mb-6 flex justify-between items-center">
@@ -246,44 +309,71 @@ const NewConversation = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
-          {/* Mensajes de la conversación */}
+          {/* Mensajes de la conversación por fases */}
           <div className="bg-white rounded-lg shadow p-4 mb-4">
             <div className="h-96 overflow-y-auto mb-4">
-              {turns.map((turn) => (
-                <div 
-                  key={turn.id}
-                  className={`mb-4 ${
-                    turn.sender === 'agent' 
-                      ? 'text-right' 
-                      : 'text-left'
-                  }`}
-                >
-                  <div 
-                    className={`inline-block rounded-lg px-4 py-2 max-w-[80%] ${
-                      turn.sender === 'agent' 
-                        ? 'bg-primary-100 text-primary-800' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    <p>{turn.message}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {turn.timestamp.toLocaleTimeString()}
-                    </p>
-                  </div>
-                  
-                  {turn.event && turn.event !== 'neutral' && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Evento: {turn.event}
+              {orderedPhases.map(phase => {
+                const phaseTurns = messagesByPhase[phase] || [];
+                if (phaseTurns.length === 0) return null;
+                
+                return (
+                  <div key={phase} className="mb-6">
+                    <h3 className="text-md font-semibold mb-2 bg-gray-100 p-2 rounded">
+                      {getPhaseName(phase)}
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      {phaseTurns.map((turn) => (
+                        <div 
+                          key={turn.id}
+                          className={`mb-4 ${
+                            turn.sender === 'agent' 
+                              ? 'text-right' 
+                              : 'text-left'
+                          }`}
+                        >
+                          <div 
+                            className={`inline-block rounded-lg px-4 py-2 max-w-[80%] ${
+                              turn.sender === 'agent' 
+                                ? 'bg-primary-100 text-primary-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            <p>{turn.message}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {turn.timestamp.toLocaleTimeString()}
+                            </p>
+                          </div>
+                          
+                          {turn.event && turn.event !== 'neutral' && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Evento: {turn.event}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  )}
+                  </div>
+                );
+              })}
+              
+              {turns.length === 0 && (
+                <div className="text-center p-4">
+                  <p className="text-gray-500">No hay mensajes aún. Comience la conversación.</p>
                 </div>
-              ))}
+              )}
+              
               <div ref={messageEndRef} />
             </div>
             
             {/* Formulario de mensaje del agente */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <PhaseSelector 
+                phase={currentPhase}
+                onChange={handlePhaseChange}
+              />
+              
+              <label className="block text-sm font-medium text-gray-700 mb-1 mt-4">
                 Mensaje del Agente
               </label>
               <div className="flex">
