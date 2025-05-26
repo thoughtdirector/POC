@@ -20,6 +20,7 @@ import * as geminiService from './geminiService';
 import * as zephyrService from './zephyrService';
 import * as openaiService from './openaiService';
 
+// Funciones principales con clientId como parámetro opcional
 export const analyzeClientMessage = async (message, conversationHistory, clientSoul, clientId = null) => {
   switch (currentService) {
     case AI_SERVICES.GEMINI:

@@ -13,9 +13,27 @@ import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
 
 const NewConversation = () => {
-  const { clientId } = useParams();
+  const { clientId: paramClientId } = useParams();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  
+  // Función para obtener clientId de manera robusta
+  const getClientId = () => {
+    if (paramClientId) {
+      return paramClientId;
+    }
+    
+    // Fallback: extraer de la URL manualmente
+    const hash = window.location.hash;
+    const pathMatch = hash.match(/\/conversation\/new\/([^\/\?#]+)/);
+    if (pathMatch && pathMatch[1]) {
+      return pathMatch[1];
+    }
+    
+    return null;
+  };
+  
+  const clientId = getClientId();
   
   const [client, setClient] = useState(null);
   const [conversationId, setConversationId] = useState(null);
@@ -29,6 +47,7 @@ const NewConversation = () => {
   const [eventType, setEventType] = useState('neutral');
   const [initialGreeting, setInitialGreeting] = useState('');
   const [currentPhase, setCurrentPhase] = useState(CONVERSATION_PHASES.GREETING);
+  const [error, setError] = useState('');
   const [suggestedDeltas, setSuggestedDeltas] = useState({
     relationship: 0,
     history: 0,
@@ -41,29 +60,89 @@ const NewConversation = () => {
   
   useEffect(() => {
     const loadClientAndStartConversation = async () => {
+      // Validación inicial: verificar que tenemos clientId y usuario
+      if (!clientId) {
+        setError('Error: No se pudo identificar el cliente desde la URL. Por favor, vuelva a la lista de clientes e intente nuevamente.');
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!currentUser) {
+        setError('Error: Usuario no autenticado. Por favor, inicie sesión nuevamente.');
+        setIsLoading(false);
+        return;
+      }
+      
       try {
         setIsLoading(true);
+        setError('');
         
+        // PASO 1: Buscar y validar que el cliente existe en Firebase
         const clientData = await getClientById(clientId);
+        
+        if (!clientData) {
+          setError(`Error: No se encontró el cliente con ID "${clientId}". Es posible que haya sido eliminado o que el enlace sea incorrecto.`);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Validar que el cliente tiene los datos mínimos necesarios
+        if (!clientData.name || !clientData.soul) {
+          setError('Error: Los datos del cliente están incompletos. Por favor, verifique la información del cliente.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // PASO 2: Establecer los datos del cliente en el estado
         setClient(clientData);
         setCurrentSoul(clientData.soul);
         
+        // PASO 3: Crear la conversación en Firebase
         const newConversationId = await createConversation(clientId, currentUser.uid, clientData.soul);
+        
+        if (!newConversationId) {
+          setError('Error: No se pudo crear la conversación. Por favor, intente nuevamente.');
+          setIsLoading(false);
+          return;
+        }
+        
         setConversationId(newConversationId);
         
-        // Crear sugerencia de saludo inicial pero no enviarlo automáticamente
-        const greeting = `Hola ${clientData.name}, le saluda ${currentUser.displayName} de Acriventas. Me comunico con usted respecto a su deuda pendiente.`;
+        // PASO 4: Generar saludo inicial sugerido
+        const agentName = currentUser.displayName || currentUser.email?.split('@')[0] || 'el equipo';
+        const greeting = `Hola ${clientData.name}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente.`;
+        
         setInitialGreeting(greeting);
         setSuggestedResponse(greeting);
         
       } catch (error) {
         console.error('Error al iniciar conversación:', error);
+        
+        // Manejo específico de errores
+        if (error.code === 'permission-denied') {
+          setError('Error: No tiene permisos para acceder a este cliente o crear conversaciones.');
+        } else if (error.code === 'not-found') {
+          setError('Error: El cliente especificado no existe o ha sido eliminado.');
+        } else if (error.message?.includes('Firebase')) {
+          setError('Error de conexión con la base de datos. Por favor, verifique su conexión a internet e intente nuevamente.');
+        } else {
+          setError(`Error inesperado al iniciar la conversación: ${error.message || 'Error desconocido'}`);
+        }
+        
+        // Limpiar estados en caso de error
+        setClient(null);
+        setCurrentSoul(null);
+        setConversationId(null);
+        
       } finally {
         setIsLoading(false);
       }
     };
     
-    loadClientAndStartConversation();
+    // Solo ejecutar si tenemos las dependencias necesarias
+    if (clientId && currentUser) {
+      loadClientAndStartConversation();
+    }
   }, [clientId, currentUser]);
   
   useEffect(() => {
@@ -110,20 +189,39 @@ const NewConversation = () => {
     const message = e.target.value;
     setClientMessage(message);
     
+    // Validar que tenemos todo lo necesario para analizar el mensaje
+    if (!clientId || !currentSoul) {
+      return;
+    }
+    
     if (message.trim().split(/\s+/).length > 3) {
       try {
-        // CORREGIDO: Pasar clientId como parámetro
         const analysis = await analyzeClientMessage(message, turns, currentSoul, clientId);
         setEventType(analysis.eventType);
         setSuggestedDeltas(analysis.deltas);
       } catch (error) {
         console.error('Error al analizar mensaje:', error);
+        // No bloquear la interfaz por errores de análisis
+        setEventType('neutral');
+        setSuggestedDeltas({
+          relationship: 0,
+          history: 0,
+          attitude: 0,
+          sensitivity: 0,
+          probability: 0
+        });
       }
     }
   };
   
   const handleAddClientMessage = async () => {
     if (!clientMessage.trim() || isSending) return;
+    
+    // Validar que tenemos todo lo necesario
+    if (!conversationId || !clientId || !currentSoul) {
+      setError('Error: Datos de conversación incompletos. Por favor, recargue la página.');
+      return;
+    }
     
     try {
       setIsSending(true);
@@ -148,7 +246,6 @@ const NewConversation = () => {
       
       setCurrentSoul(result.currentSoul);
       
-      // CORREGIDO: Pasar clientId como parámetro
       const responseResult = await generateAgentResponse(
         turns,
         result.currentSoul,
@@ -159,6 +256,7 @@ const NewConversation = () => {
       
       setSuggestedResponse(responseResult.responseText);
       
+      // Limpiar formulario
       setClientMessage('');
       setEventType('neutral');
       setSuggestedDeltas({
@@ -181,6 +279,7 @@ const NewConversation = () => {
       
     } catch (error) {
       console.error('Error al agregar mensaje del cliente:', error);
+      setError(`Error al procesar el mensaje: ${error.message || 'Error desconocido'}`);
     } finally {
       setIsSending(false);
     }
@@ -233,28 +332,105 @@ const NewConversation = () => {
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-          <div className="h-10 bg-gray-200 rounded"></div>
+        <div className="text-center">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mx-auto"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            <div className="h-64 bg-gray-200 rounded"></div>
+          </div>
+          <p className="mt-4 text-gray-600">
+            {!clientId ? 'Obteniendo información del cliente...' : 
+             !client ? 'Validando cliente...' :
+             !conversationId ? 'Creando conversación...' :
+             'Preparando interfaz...'}
+          </p>
         </div>
       </div>
     );
   }
   
-  if (!client) {
+  // Mostrar errores con opciones de recuperación
+  if (error) {
     return (
       <div className="container mx-auto px-4 py-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Error:</strong>
-          <span className="block sm:inline"> No se pudo encontrar el cliente.</span>
+        <div className="max-w-md mx-auto">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg shadow" role="alert">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">
+                  Error al iniciar conversación
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{error}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <button 
+              className="btn-primary flex-1"
+              onClick={() => {
+                setError('');
+                setIsLoading(true);
+                // Recargar la página para reintentar
+                window.location.reload();
+              }}
+            >
+              Reintentar
+            </button>
+            <button 
+              className="btn-secondary flex-1"
+              onClick={() => navigate('/clients')}
+            >
+              Volver a Clientes
+            </button>
+          </div>
+          
+          {/* Debug info para desarrollo */}
+          {process.env.NODE_ENV === 'development' && (
+            <details className="mt-4 p-3 bg-gray-100 rounded text-xs">
+              <summary className="cursor-pointer font-medium">Debug Info (Solo desarrollo)</summary>
+              <div className="mt-2 space-y-1">
+                <div><strong>ClientId:</strong> {clientId || 'undefined'}</div>
+                <div><strong>URL:</strong> {window.location.href}</div>
+                <div><strong>Hash:</strong> {window.location.hash}</div>
+                <div><strong>Usuario:</strong> {currentUser?.email || 'No autenticado'}</div>
+              </div>
+            </details>
+          )}
         </div>
-        <button 
-          className="btn-secondary mt-4"
-          onClick={() => navigate(-1)}
-        >
-          Volver
-        </button>
+      </div>
+    );
+  }
+  
+  // Validación final antes de mostrar la interfaz
+  if (!client || !conversationId || !currentSoul) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Advertencia:</strong>
+          <span className="block sm:inline"> Los datos de la conversación no están completamente cargados.</span>
+          <div className="mt-2">
+            <button 
+              className="btn-secondary mr-2"
+              onClick={() => window.location.reload()}
+            >
+              Recargar
+            </button>
+            <button 
+              className="btn-secondary"
+              onClick={() => navigate('/clients')}
+            >
+              Volver a Clientes
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -312,6 +488,33 @@ const NewConversation = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
+          {/* Mostrar errores durante la conversación */}
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm">{error}</p>
+                </div>
+                <div className="ml-auto pl-3">
+                  <button
+                    onClick={() => setError('')}
+                    className="text-red-400 hover:text-red-600"
+                  >
+                    <span className="sr-only">Cerrar</span>
+                    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Mensajes de la conversación por fases */}
           <div className="bg-white rounded-lg shadow p-4 mb-4">
             <div className="h-96 overflow-y-auto mb-4">
@@ -476,10 +679,25 @@ const NewConversation = () => {
           <div className="bg-white rounded-lg shadow p-4 mb-4">
             <h2 className="text-lg font-semibold mb-4">Información del Cliente</h2>
             <div className="space-y-2">
+              <p><span className="font-medium">Nombre:</span> {client.name}</p>
               <p><span className="font-medium">Teléfono:</span> {client.phone}</p>
               <p><span className="font-medium">Email:</span> {client.email || 'No disponible'}</p>
               <p><span className="font-medium">Estado de deuda:</span> Deuda pendiente</p>
               <p className="text-sm text-gray-500 mt-2 italic">Nota: Por razones de privacidad, no se muestran montos específicos en este módulo.</p>
+              
+              {/* Info de debug en desarrollo */}
+              {process.env.NODE_ENV === 'development' && (
+                <details className="mt-3 p-2 bg-gray-50 rounded text-xs">
+                  <summary className="cursor-pointer font-medium text-gray-600">Debug Info</summary>
+                  <div className="mt-2 space-y-1 text-gray-500">
+                    <div><strong>ClientId:</strong> {clientId}</div>
+                    <div><strong>ConversationId:</strong> {conversationId}</div>
+                    <div><strong>Alma presente:</strong> {currentSoul ? '✅' : '❌'}</div>
+                    <div><strong>Usuario:</strong> {currentUser?.email}</div>
+                    <div><strong>Turnos:</strong> {turns.length}</div>
+                  </div>
+                </details>
+              )}
             </div>
           </div>
           

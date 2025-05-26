@@ -29,6 +29,7 @@ const ConversationDetail = () => {
   const [suggestedResponse, setSuggestedResponse] = useState('');
   const [responseAdded, setResponseAdded] = useState(false);
   const [currentPhase, setCurrentPhase] = useState(CONVERSATION_PHASES.NEGOTIATION);
+  const [error, setError] = useState('');
   
   // Estados para agregar nuevos mensajes
   const [newMessage, setNewMessage] = useState({
@@ -48,9 +49,31 @@ const ConversationDetail = () => {
   
   useEffect(() => {
     const loadConversation = async () => {
+      if (!conversationId) {
+        setError('Error: ID de conversación no válido.');
+        setIsLoading(false);
+        return;
+      }
+      
       try {
         setIsLoading(true);
+        setError('');
+        
         const conversationData = await getConversationDetails(conversationId);
+        
+        if (!conversationData) {
+          setError('Error: No se encontró la conversación especificada. Es posible que haya sido eliminada.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Validar que la conversación tiene los datos mínimos necesarios
+        if (!conversationData.clientId || !conversationData.clientName) {
+          setError('Error: Los datos de la conversación están incompletos.');
+          setIsLoading(false);
+          return;
+        }
+        
         setConversation(conversationData);
         
         // Si ya tiene resumen, cargar los datos
@@ -71,6 +94,16 @@ const ConversationDetail = () => {
         }
       } catch (error) {
         console.error('Error al cargar conversación:', error);
+        
+        if (error.code === 'permission-denied') {
+          setError('Error: No tiene permisos para acceder a esta conversación.');
+        } else if (error.code === 'not-found') {
+          setError('Error: La conversación especificada no existe o ha sido eliminada.');
+        } else if (error.message?.includes('Firebase')) {
+          setError('Error de conexión con la base de datos. Por favor, verifique su conexión a internet.');
+        } else {
+          setError(`Error al cargar la conversación: ${error.message || 'Error desconocido'}`);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -87,8 +120,9 @@ const ConversationDetail = () => {
     }));
   };
   
-  // Esta función SOLO se llama cuando se presiona el botón de Cerrar Conversación
   const handleCloseConversation = async () => {
+    if (!conversation) return;
+    
     try {
       setIsClosing(true);
       await closeConversation(conversationId, summary);
@@ -97,10 +131,10 @@ const ConversationDetail = () => {
       const updatedConversation = await getConversationDetails(conversationId);
       setConversation(updatedConversation);
       
-      // Salir del modo de cierre
       setIsClosing(false);
     } catch (error) {
       console.error('Error al cerrar conversación:', error);
+      setError(`Error al cerrar la conversación: ${error.message || 'Error desconocido'}`);
       setIsClosing(false);
     }
   };
@@ -133,7 +167,7 @@ const ConversationDetail = () => {
   
   // Añadir un nuevo mensaje a la conversación
   const handleAddMessage = async () => {
-    if (!newMessage.message.trim()) return;
+    if (!newMessage.message.trim() || !conversation) return;
     
     try {
       const turnData = {
@@ -162,13 +196,14 @@ const ConversationDetail = () => {
       });
       
       // Si se añade un mensaje del cliente, generar una sugerencia de respuesta
-      if (turnData.sender === 'client' && updatedConversation.isActive) {
+      if (turnData.sender === 'client' && updatedConversation.isActive && conversation.clientId) {
         try {
           const responseResult = await generateAgentResponse(
             updatedConversation.turns,
             updatedConversation.currentSoul,
             turnData.message,
-            turnData.event
+            turnData.event,
+            conversation.clientId
           );
           
           setSuggestedResponse(responseResult.responseText);
@@ -179,100 +214,105 @@ const ConversationDetail = () => {
       }
     } catch (error) {
       console.error('Error al agregar mensaje:', error);
+      setError(`Error al agregar el mensaje: ${error.message || 'Error desconocido'}`);
     }
   };
   
   // Generar sugerencias cuando se cambia un evento
-const handleEventChange = async (newEvent) => {
-  // Solo generar sugerencias si la conversación está activa
-  if (conversation && conversation.isActive) {
-    try {
-      // Obtener el último mensaje del cliente (o el mensaje que se está editando)
-      const clientMessage = editingTurn 
-        ? editingTurn.message 
-        : conversation.turns.find(t => t.sender === 'client')?.message || "Mensaje del cliente";
-      
-      // CORREGIDO: Pasar conversation.clientId como parámetro
-      const responseResult = await generateAgentResponse(
-        conversation.turns,
-        conversation.currentSoul,
-        clientMessage,
-        newEvent,
-        conversation.clientId
-      );
-      
-      setSuggestedResponse(responseResult.responseText);
-      setResponseAdded(true);
-    } catch (error) {
-      console.error('Error al generar sugerencia:', error);
-    }
-  }
-};
-  
-  // Editar un turno existente
-const handleEditTurn = async (turnId, updatedData) => {
-  try {
-    await editConversationTurn(conversationId, turnId, updatedData);
-    
-    // Recargar la conversación
-    const updatedConversation = await getConversationDetails(conversationId);
-    setConversation(updatedConversation);
-    
-    // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
-    if (editingTurn.sender === 'client' && conversation.isActive) {
+  const handleEventChange = async (newEvent) => {
+    // Solo generar sugerencias si la conversación está activa y tenemos clientId
+    if (conversation && conversation.isActive && conversation.clientId) {
       try {
-        // CORREGIDO: Pasar conversation.clientId como parámetro
+        // Obtener el último mensaje del cliente (o el mensaje que se está editando)
+        const clientMessage = editingTurn 
+          ? editingTurn.message 
+          : conversation.turns.find(t => t.sender === 'client')?.message || "Mensaje del cliente";
+        
         const responseResult = await generateAgentResponse(
-          updatedConversation.turns,
-          updatedConversation.currentSoul,
-          updatedData.message,
-          updatedData.event,
+          conversation.turns,
+          conversation.currentSoul,
+          clientMessage,
+          newEvent,
           conversation.clientId
         );
         
         setSuggestedResponse(responseResult.responseText);
         setResponseAdded(true);
       } catch (error) {
-        console.error('Error al generar sugerencia de respuesta:', error);
+        console.error('Error al generar sugerencia:', error);
       }
     }
+  };
+  
+  // Editar un turno existente
+  const handleEditTurn = async (turnId, updatedData) => {
+    if (!conversation) return;
     
-    setEditingTurn(null);
-  } catch (error) {
-    console.error('Error al editar mensaje:', error);
-  }
-};
+    try {
+      await editConversationTurn(conversationId, turnId, updatedData);
+      
+      // Recargar la conversación
+      const updatedConversation = await getConversationDetails(conversationId);
+      setConversation(updatedConversation);
+      
+      // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
+      if (editingTurn.sender === 'client' && conversation.isActive && conversation.clientId) {
+        try {
+          const responseResult = await generateAgentResponse(
+            updatedConversation.turns,
+            updatedConversation.currentSoul,
+            updatedData.message,
+            updatedData.event,
+            conversation.clientId
+          );
+          
+          setSuggestedResponse(responseResult.responseText);
+          setResponseAdded(true);
+        } catch (error) {
+          console.error('Error al generar sugerencia de respuesta:', error);
+        }
+      }
+      
+      setEditingTurn(null);
+    } catch (error) {
+      console.error('Error al editar mensaje:', error);
+      setError(`Error al editar el mensaje: ${error.message || 'Error desconocido'}`);
+    }
+  };
   
   // Eliminar un turno
   const handleDeleteTurn = async (turnId) => {
-    if (window.confirm('¿Está seguro de que desea eliminar este mensaje?')) {
-      try {
-        await deleteConversationTurn(conversationId, turnId);
-        
-        // Recargar la conversación
-        const updatedConversation = await getConversationDetails(conversationId);
-        setConversation(updatedConversation);
-      } catch (error) {
-        console.error('Error al eliminar mensaje:', error);
-      }
+    if (!window.confirm('¿Está seguro de que desea eliminar este mensaje?')) return;
+    
+    try {
+      await deleteConversationTurn(conversationId, turnId);
+      
+      // Recargar la conversación
+      const updatedConversation = await getConversationDetails(conversationId);
+      setConversation(updatedConversation);
+    } catch (error) {
+      console.error('Error al eliminar mensaje:', error);
+      setError(`Error al eliminar el mensaje: ${error.message || 'Error desconocido'}`);
     }
   };
   
   // Eliminar conversación completa
   const handleDeleteConversation = async () => {
-    if (window.confirm('¿Está seguro que desea eliminar permanentemente esta conversación? Esta acción no se puede deshacer.')) {
-      try {
-        await deleteConversation(conversationId);
-        navigate('/'); // Redirigir al dashboard
-      } catch (error) {
-        console.error('Error al eliminar conversación:', error);
-        alert('Error al eliminar la conversación: ' + error.message);
-      }
+    if (!window.confirm('¿Está seguro que desea eliminar permanentemente esta conversación? Esta acción no se puede deshacer.')) return;
+    
+    try {
+      await deleteConversation(conversationId);
+      navigate('/');
+    } catch (error) {
+      console.error('Error al eliminar conversación:', error);
+      setError(`Error al eliminar la conversación: ${error.message || 'Error desconocido'}`);
     }
   };
   
   // Cambiar estado de actividad
   const handleToggleActive = async () => {
+    if (!conversation) return;
+    
     try {
       if (conversation.isActive) {
         await updateConversationStatus(conversationId, CONVERSATION_STATUS.INACTIVE, false);
@@ -285,6 +325,7 @@ const handleEditTurn = async (turnId, updatedData) => {
       setConversation(updatedConversation);
     } catch (error) {
       console.error('Error al cambiar estado de actividad:', error);
+      setError(`Error al cambiar el estado: ${error.message || 'Error desconocido'}`);
     }
   };
   
@@ -294,7 +335,7 @@ const handleEditTurn = async (turnId, updatedData) => {
       setNewMessage(prev => ({
         ...prev,
         message: suggestedResponse,
-        sender: 'agent'  // Asegurarse de que el remitente sea el agente
+        sender: 'agent'
       }));
       setSuggestedResponse('');
       setResponseAdded(false);
@@ -328,6 +369,61 @@ const handleEditTurn = async (turnId, updatedData) => {
       return format(date, 'PPp', { locale: es });
     }
   };
+  
+  // Estados de carga y error
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="text-center">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mx-auto"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            <div className="h-64 bg-gray-200 rounded"></div>
+          </div>
+          <p className="mt-4 text-gray-600">Cargando conversación...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (error && !conversation) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="max-w-md mx-auto">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg shadow" role="alert">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Error al cargar conversación</h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{error}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <button 
+              className="btn-primary flex-1"
+              onClick={() => window.location.reload()}
+            >
+              Reintentar
+            </button>
+            <button 
+              className="btn-secondary flex-1"
+              onClick={() => navigate('/')}
+            >
+              Volver al Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   // Agrupar mensajes por fases
   const getMessagesByPhase = () => {
@@ -369,36 +465,6 @@ const handleEditTurn = async (turnId, updatedData) => {
         return "Fase desconocida";
     }
   };
-  
-  if (isLoading) {
-    return (
-      <div className="container mx-auto px-4 py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-          <div className="h-64 bg-gray-200 rounded mb-4"></div>
-          <div className="h-24 bg-gray-200 rounded"></div>
-        </div>
-      </div>
-    );
-  }
-  
-  if (!conversation) {
-    return (
-      <div className="container mx-auto px-4 py-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Error:</strong>
-          <span className="block sm:inline"> No se pudo encontrar la conversación.</span>
-        </div>
-        <button 
-          className="btn-secondary mt-4"
-          onClick={() => navigate(-1)}
-        >
-          Volver
-        </button>
-      </div>
-    );
-  }
   
   const messagesByPhase = getMessagesByPhase();
   
@@ -472,14 +538,40 @@ const handleEditTurn = async (turnId, updatedData) => {
         </div>
       </div>
       
+      {/* Mostrar errores durante la conversación */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm">{error}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                onClick={() => setError('')}
+                className="text-red-400 hover:text-red-600"
+              >
+                <span className="sr-only">Cerrar</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Nota sobre edición */}
       {isEditing && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded mb-6">
-          <h3 className="font-semibold mb-2">Nota sobre edición de conversaciones</h3>
+          <h3 className="font-semibold mb-2">Modo de edición activo</h3>
           <p>
-            En este modo de edición puede modificar mensajes y eventos. Si la conversación está activa,
-            se generarán sugerencias de respuesta basadas en los cambios realizados. Estas sugerencias se 
-            generan automáticamente al cambiar un tipo de evento o editar un mensaje del cliente.
+            Puede modificar mensajes y eventos existentes. Si la conversación está activa,
+            se generarán sugerencias de respuesta automáticamente basadas en los cambios realizados.
           </p>
         </div>
       )}
@@ -591,7 +683,7 @@ const handleEditTurn = async (turnId, updatedData) => {
               </p>
             )}
             
-            {/* Mostrar respuesta sugerida basada en los cambios (con animación) */}
+            {/* Mostrar respuesta sugerida basada en los cambios */}
             {suggestedResponse && (
               <div className={`mt-4 p-3 bg-blue-50 border border-blue-100 rounded-md transition-all duration-300 ${responseAdded ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="flex justify-between items-start">

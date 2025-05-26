@@ -132,7 +132,6 @@ const getSimilarClientContext = async (clientSoul, clientDebt = 0) => {
 const buildContextualPrompt = async (clientId, clientSoul, conversationHistory, isAnalysis = false) => {
   // Validar parámetros de entrada
   if (!clientId) {
-    console.log("ClientId no proporcionado, continuando sin contexto previo");
     return {
       contextSection: "=== SIN CONTEXTO PREVIO ===\nEsta es la primera interacción registrada.\n",
       currentConversation: "",
@@ -195,7 +194,6 @@ export const analyzeClientMessage = async (message, conversationHistory, clientS
     const API_KEY = getApiKey();
     
     if (!API_KEY || API_KEY.trim() === "") {
-      console.log("No hay API key configurada para OpenAI, usando fallback local");
       return fallbackAnalyzeClientMessage(message, conversationHistory, clientSoul);
     }
     
@@ -252,8 +250,6 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
 
     const userPrompt = `Mensaje del cliente a analizar: "${message}"`;
 
-    console.log("Enviando solicitud a OpenAI API para análisis...");
-    
     const response = await openaiApi.post('/chat/completions', {
       model: "gpt-3.5-turbo",
       messages: [
@@ -269,8 +265,6 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
       max_tokens: 20,
       temperature: 0.1
     });
-
-    console.log("Respuesta de OpenAI:", response.data);
     
     let responseText = response.data.choices[0]?.message?.content?.trim() || '';
     
@@ -303,8 +297,6 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
     };
 
     const deltas = deltaMap[eventType] || deltaMap.neutral;
-
-    console.log(`Evento detectado por OpenAI: "${eventType}" con deltas:`, deltas);
     
     return {
       eventType,
@@ -314,7 +306,6 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
     };
   } catch (error) {
     console.error('Error al analizar mensaje con OpenAI:', error);
-    console.log("Usando fallback local debido al error");
     return fallbackAnalyzeClientMessage(message, conversationHistory, clientSoul);
   }
 };
@@ -325,7 +316,6 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
     const API_KEY = getApiKey();
     
     if (!API_KEY || API_KEY.trim() === "") {
-      console.log("No hay API key configurada para OpenAI, usando fallback local");
       return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent);
     }
     
@@ -398,8 +388,6 @@ Genera UNA respuesta concisa (máximo 2 oraciones) adaptada al perfil del client
 
     const userPrompt = `Basándote en el contexto y el evento "${lastEvent}", genera una respuesta apropiada como agente de cobranza.`;
 
-    console.log("Enviando solicitud para generar respuesta a OpenAI API...");
-    
     const response = await openaiApi.post('/chat/completions', {
       model: "gpt-3.5-turbo",
       messages: [
@@ -415,8 +403,6 @@ Genera UNA respuesta concisa (máximo 2 oraciones) adaptada al perfil del client
       max_tokens: 150,
       temperature: 0.7
     });
-
-    console.log("Respuesta de OpenAI para generación:", response.data);
     
     let responseText = response.data.choices[0]?.message?.content?.trim() || '';
     
@@ -424,8 +410,6 @@ Genera UNA respuesta concisa (máximo 2 oraciones) adaptada al perfil del client
     if (!responseText) {
       responseText = "Entiendo su situación. ¿Podríamos coordinar una fecha para el pago de su deuda pendiente?";
     }
-
-    console.log(`Respuesta generada por OpenAI usando tono "${toneDescription}": ${responseText}`);
     
     return {
       responseText,
@@ -434,7 +418,6 @@ Genera UNA respuesta concisa (máximo 2 oraciones) adaptada al perfil del client
     };
   } catch (error) {
     console.error('Error al generar respuesta con OpenAI:', error);
-    console.log("Usando fallback local para respuesta debido al error");
     return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent);
   }
 };
@@ -482,8 +465,6 @@ const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) 
   };
   
   const deltas = deltaMap[eventType] || deltaMap.neutral;
-  
-  console.log(`Evento detectado por fallback mejorado: "${eventType}" con deltas:`, deltas);
   
   return {
     eventType,
@@ -581,8 +562,6 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
   // Seleccionar plantilla de respuesta
   const eventResponses = responseTemplates[lastEvent] || responseTemplates.default;
   const response = eventResponses[tone] || eventResponses.neutral;
-  
-  console.log(`Respuesta generada por fallback mejorado usando tono "${tone}": ${response}`);
   
   return {
     responseText: response,
