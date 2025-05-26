@@ -144,7 +144,6 @@ const AISettings = () => {
                 <div className="font-medium text-gray-900">OpenAI GPT-3.5 Turbo</div>
                 <div className="text-sm text-gray-500">{getServiceDescription(AI_SERVICES.OPENAI)}</div>
                 <div className="text-xs text-green-600 mt-1">
-                  ✨ <strong>Incluye contexto avanzado:</strong> Usa conversaciones previas y aprende de clientes similares
                 </div>
               </div>
               <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">PREMIUM</span>
@@ -222,21 +221,7 @@ const AISettings = () => {
             </div>
           )}
         </div>
-        
-        {/* Características del servicio OpenAI */}
-        {currentService === AI_SERVICES.OPENAI && (
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded">
-            <h4 className="font-semibold text-green-800 mb-2">🚀 Características avanzadas de OpenAI</h4>
-            <ul className="text-sm text-green-700 space-y-1">
-              <li>• <strong>Contexto inteligente:</strong> Analiza conversaciones previas con el mismo cliente</li>
-              <li>• <strong>Aprendizaje adaptativo:</strong> Si no hay historial, aprende del estilo de clientes similares</li>
-              <li>• <strong>Respuestas por fases:</strong> Adapta el mensaje según la etapa de la conversación</li>
-              <li>• <strong>Análisis de personalidad:</strong> Ajusta el tono según el perfil psicológico del cliente</li>
-              <li>• <strong>Mayor precisión:</strong> Detecta mejor las intenciones y emociones del cliente</li>
-            </ul>
-          </div>
-        )}
-        
+           
         {message && (
           <div className={`p-3 rounded mt-4 ${message.includes('Error') ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
             {message}
