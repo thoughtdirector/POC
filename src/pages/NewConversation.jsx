@@ -112,7 +112,8 @@ const NewConversation = () => {
     
     if (message.trim().split(/\s+/).length > 3) {
       try {
-        const analysis = await analyzeClientMessage(message, turns, currentSoul);
+        // CORREGIDO: Pasar clientId como parámetro
+        const analysis = await analyzeClientMessage(message, turns, currentSoul, clientId);
         setEventType(analysis.eventType);
         setSuggestedDeltas(analysis.deltas);
       } catch (error) {
@@ -147,11 +148,13 @@ const NewConversation = () => {
       
       setCurrentSoul(result.currentSoul);
       
+      // CORREGIDO: Pasar clientId como parámetro
       const responseResult = await generateAgentResponse(
         turns,
         result.currentSoul,
         clientMessage,
-        eventType
+        eventType,
+        clientId
       );
       
       setSuggestedResponse(responseResult.responseText);

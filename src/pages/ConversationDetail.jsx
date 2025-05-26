@@ -183,62 +183,65 @@ const ConversationDetail = () => {
   };
   
   // Generar sugerencias cuando se cambia un evento
-  const handleEventChange = async (newEvent) => {
-    // Solo generar sugerencias si la conversación está activa
-    if (conversation && conversation.isActive) {
+const handleEventChange = async (newEvent) => {
+  // Solo generar sugerencias si la conversación está activa
+  if (conversation && conversation.isActive) {
+    try {
+      // Obtener el último mensaje del cliente (o el mensaje que se está editando)
+      const clientMessage = editingTurn 
+        ? editingTurn.message 
+        : conversation.turns.find(t => t.sender === 'client')?.message || "Mensaje del cliente";
+      
+      // CORREGIDO: Pasar conversation.clientId como parámetro
+      const responseResult = await generateAgentResponse(
+        conversation.turns,
+        conversation.currentSoul,
+        clientMessage,
+        newEvent,
+        conversation.clientId
+      );
+      
+      setSuggestedResponse(responseResult.responseText);
+      setResponseAdded(true);
+    } catch (error) {
+      console.error('Error al generar sugerencia:', error);
+    }
+  }
+};
+  
+  // Editar un turno existente
+const handleEditTurn = async (turnId, updatedData) => {
+  try {
+    await editConversationTurn(conversationId, turnId, updatedData);
+    
+    // Recargar la conversación
+    const updatedConversation = await getConversationDetails(conversationId);
+    setConversation(updatedConversation);
+    
+    // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
+    if (editingTurn.sender === 'client' && conversation.isActive) {
       try {
-        // Obtener el último mensaje del cliente (o el mensaje que se está editando)
-        const clientMessage = editingTurn 
-          ? editingTurn.message 
-          : conversation.turns.find(t => t.sender === 'client')?.message || "Mensaje del cliente";
-        
-        // Usar el servicio de IA para generar una respuesta
+        // CORREGIDO: Pasar conversation.clientId como parámetro
         const responseResult = await generateAgentResponse(
-          conversation.turns,
-          conversation.currentSoul,
-          clientMessage,
-          newEvent
+          updatedConversation.turns,
+          updatedConversation.currentSoul,
+          updatedData.message,
+          updatedData.event,
+          conversation.clientId
         );
         
         setSuggestedResponse(responseResult.responseText);
         setResponseAdded(true);
       } catch (error) {
-        console.error('Error al generar sugerencia:', error);
+        console.error('Error al generar sugerencia de respuesta:', error);
       }
     }
-  };
-  
-  // Editar un turno existente
-  const handleEditTurn = async (turnId, updatedData) => {
-    try {
-      await editConversationTurn(conversationId, turnId, updatedData);
-      
-      // Recargar la conversación
-      const updatedConversation = await getConversationDetails(conversationId);
-      setConversation(updatedConversation);
-      
-      // Si se editó un mensaje del cliente, generar una sugerencia de respuesta
-      if (editingTurn.sender === 'client' && conversation.isActive) {
-        try {
-          const responseResult = await generateAgentResponse(
-            updatedConversation.turns,
-            updatedConversation.currentSoul,
-            updatedData.message,
-            updatedData.event
-          );
-          
-          setSuggestedResponse(responseResult.responseText);
-          setResponseAdded(true);
-        } catch (error) {
-          console.error('Error al generar sugerencia de respuesta:', error);
-        }
-      }
-      
-      setEditingTurn(null);
-    } catch (error) {
-      console.error('Error al editar mensaje:', error);
-    }
-  };
+    
+    setEditingTurn(null);
+  } catch (error) {
+    console.error('Error al editar mensaje:', error);
+  }
+};
   
   // Eliminar un turno
   const handleDeleteTurn = async (turnId) => {

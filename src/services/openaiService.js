@@ -9,6 +9,12 @@ const getApiKey = () => localStorage.getItem('openai_api_key') || "";
 // Función para obtener contexto de conversaciones previas del cliente
 const getPreviousConversationContext = async (clientId) => {
   try {
+    // Validar que clientId no sea undefined o null
+    if (!clientId) {
+      console.log("ClientId no válido para obtener contexto previo");
+      return null;
+    }
+
     const conversations = await getConversationsByClient(clientId, 3); // Últimas 3 conversaciones
     if (conversations.length === 0) return null;
     
@@ -43,16 +49,25 @@ const getPreviousConversationContext = async (clientId) => {
 };
 
 // Función para buscar clientes similares y obtener su contexto conversacional
-const getSimilarClientContext = async (clientSoul, clientDebt) => {
+const getSimilarClientContext = async (clientSoul, clientDebt = 0) => {
   try {
+    // Validar que tenemos los datos necesarios
+    if (!clientSoul || typeof clientDebt !== 'number') {
+      console.log("Datos insuficientes para obtener contexto de clientes similares");
+      return null;
+    }
+
     const allClients = await getAllClients();
     
+    // Si no hay deuda específica, usar un valor por defecto
+    const targetDebt = clientDebt || 1000000; // 1 millón como valor por defecto
+    
     // Filtrar clientes con deuda similar (+/- 30% del monto)
-    const debtRange = clientDebt * 0.3;
+    const debtRange = targetDebt * 0.3;
     const similarDebtClients = allClients.filter(client => 
       client.id !== clientSoul.id && 
-      client.debt >= (clientDebt - debtRange) && 
-      client.debt <= (clientDebt + debtRange)
+      client.debt >= (targetDebt - debtRange) && 
+      client.debt <= (targetDebt + debtRange)
     );
     
     if (similarDebtClients.length === 0) return null;
@@ -113,8 +128,19 @@ const getSimilarClientContext = async (clientSoul, clientDebt) => {
   }
 };
 
-// Construir prompt contextual mejorado
+// Construir prompt contextual mejorado - AÑADIMOS clientId como parámetro
 const buildContextualPrompt = async (clientId, clientSoul, conversationHistory, isAnalysis = false) => {
+  // Validar parámetros de entrada
+  if (!clientId) {
+    console.log("ClientId no proporcionado, continuando sin contexto previo");
+    return {
+      contextSection: "=== SIN CONTEXTO PREVIO ===\nEsta es la primera interacción registrada.\n",
+      currentConversation: "",
+      currentPhase: 'greeting',
+      phaseDescription: "FASE 1 - SALUDO: Establecer contacto inicial, identificarse y crear rapport"
+    };
+  }
+
   // Obtener contexto previo
   const previousContext = await getPreviousConversationContext(clientId);
   const similarContext = previousContext ? null : await getSimilarClientContext(clientSoul, clientSoul.debt || 0);
@@ -163,8 +189,8 @@ const buildContextualPrompt = async (clientId, clientSoul, conversationHistory, 
   };
 };
 
-// Detección de eventos y sugerencia de deltas
-export const analyzeClientMessage = async (message, conversationHistory, clientSoul) => {
+// Detección de eventos y sugerencia de deltas - MODIFICAMOS para recibir clientId
+export const analyzeClientMessage = async (message, conversationHistory, clientSoul, clientId = null) => {
   try {
     const API_KEY = getApiKey();
     
@@ -184,9 +210,9 @@ export const analyzeClientMessage = async (message, conversationHistory, clientS
       }
     });
     
-    // Construir contexto
+    // Construir contexto - PASAMOS clientId
     const context = await buildContextualPrompt(
-      clientSoul.clientId, 
+      clientId, 
       clientSoul, 
       conversationHistory, 
       true
@@ -293,8 +319,8 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
   }
 };
 
-// Generación de respuestas
-export const generateAgentResponse = async (conversationHistory, clientSoul, lastClientMessage, lastEvent) => {
+// Generación de respuestas - MODIFICAMOS para recibir clientId
+export const generateAgentResponse = async (conversationHistory, clientSoul, lastClientMessage, lastEvent, clientId = null) => {
   try {
     const API_KEY = getApiKey();
     
@@ -313,9 +339,9 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
       }
     });
     
-    // Construir contexto
+    // Construir contexto - PASAMOS clientId
     const context = await buildContextualPrompt(
-      clientSoul.clientId, 
+      clientId, 
       clientSoul, 
       conversationHistory, 
       false
@@ -413,7 +439,7 @@ Genera UNA respuesta concisa (máximo 2 oraciones) adaptada al perfil del client
   }
 };
 
-// Funciones de fallback (similares a las de Zephyr pero adaptadas)
+// Funciones de fallback (sin cambios significativos)
 const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) => {
   const messageText = message.toLowerCase();
   
