@@ -17,6 +17,21 @@ const NewConversation = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   
+  // Función para determinar el tratamiento apropiado (Don/Doña)
+  const getClientTreatment = (clientName) => {
+    if (!clientName) return 'estimado cliente';
+    
+    // Lógica simple para determinar género - en producción esto debería ser un campo del cliente
+    const commonFemaleNames = ['maria', 'ana', 'carmen', 'rosa', 'lucia', 'elena', 'patricia', 'laura', 'sandra', 'monica', 'claudia', 'alejandra', 'diana', 'beatriz', 'martha', 'gloria', 'adriana', 'paola', 'carolina', 'andrea', 'liliana', 'marcela', 'angela', 'catalina', 'esperanza'];
+    const firstName = clientName.toLowerCase().split(' ')[0];
+    
+    if (commonFemaleNames.includes(firstName)) {
+      return `Doña ${clientName.split(' ')[0]}`;
+    } else {
+      return `Don ${clientName.split(' ')[0]}`;
+    }
+  };
+  
   // Función para obtener clientId de manera robusta
   const getClientId = () => {
     if (paramClientId) {
@@ -108,9 +123,12 @@ const NewConversation = () => {
         
         setConversationId(newConversationId);
         
-        // PASO 4: Generar saludo inicial sugerido
+        // PASO 4: Generar saludo inicial sugerido CON TRATAMIENTO FORMAL
         const agentName = currentUser.displayName || currentUser.email?.split('@')[0] || 'el equipo';
-        const greeting = `Hola ${clientData.name}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente.`;
+        const clientTreatment = getClientTreatment(clientData.name);
+        
+        // Saludo formal con Don/Doña y información de deuda
+        const greeting = `Buenos días ${clientTreatment}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente por valor de $${clientData.debt.toLocaleString('es-CO')} COP.`;
         
         setInitialGreeting(greeting);
         setSuggestedResponse(greeting);
@@ -475,7 +493,7 @@ const NewConversation = () => {
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Conversación con {client.name}</h1>
+        <h1 className="text-2xl font-bold">Conversación con {getClientTreatment(client.name)}</h1>
         <div>
           <button 
             className="btn-primary"
@@ -566,6 +584,18 @@ const NewConversation = () => {
               {turns.length === 0 && (
                 <div className="text-center p-4">
                   <p className="text-gray-500">No hay mensajes aún. Comience la conversación.</p>
+                  {initialGreeting && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded-md">
+                      <p className="text-sm text-blue-600 mb-1">Saludo inicial sugerido:</p>
+                      <p className="text-sm">{initialGreeting}</p>
+                      <button
+                        className="text-xs text-blue-600 mt-1 underline"
+                        onClick={() => setMessage(initialGreeting)}
+                      >
+                        Usar este saludo
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -680,10 +710,10 @@ const NewConversation = () => {
             <h2 className="text-lg font-semibold mb-4">Información del Cliente</h2>
             <div className="space-y-2">
               <p><span className="font-medium">Nombre:</span> {client.name}</p>
+              <p><span className="font-medium">Tratamiento:</span> {getClientTreatment(client.name)}</p>
               <p><span className="font-medium">Teléfono:</span> {client.phone}</p>
               <p><span className="font-medium">Email:</span> {client.email || 'No disponible'}</p>
-              <p><span className="font-medium">Estado de deuda:</span> Deuda pendiente</p>
-              <p className="text-sm text-gray-500 mt-2 italic">Nota: Por razones de privacidad, no se muestran montos específicos en este módulo.</p>
+              <p><span className="font-medium">Deuda:</span> ${client.debt.toLocaleString('es-CO')} COP</p>
               
               {/* Info de debug en desarrollo */}
               {process.env.NODE_ENV === 'development' && (
