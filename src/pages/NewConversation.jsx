@@ -11,6 +11,7 @@ import {
 import { analyzeClientMessage, generateAgentResponse } from '../services/aiService';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
+import { getProviderById } from '../firebase/providers';
 
 const NewConversation = () => {
   const { clientId: paramClientId } = useParams();
@@ -124,12 +125,17 @@ const NewConversation = () => {
         setConversationId(newConversationId);
         
         // PASO 4: Generar saludo inicial sugerido CON TRATAMIENTO FORMAL
-        const agentName = currentUser.displayName || currentUser.email?.split('@')[0] || 'el equipo';
-        const clientTreatment = getClientTreatment(clientData.name);
+        // const agentName = currentUser.displayName || currentUser.email?.split('@')[0] || 'el equipo';
+        // const clientTreatment = getClientTreatment(clientData.name);
         
         // Saludo formal con Don/Doña y información de deuda
-        const greeting = `Buenos días ${clientTreatment}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente por valor de $${clientData.debt.toLocaleString('es-CO')} COP.`;
-        
+        // const greeting = `Buenos días ${clientTreatment}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente por valor de $${clientData.debt.toLocaleString('es-CO')} COP.`;
+
+        // Se obtiene el proveedor del cliente, si no tiene proveedor se usa Acriventas
+        const provider = await getProviderById(clientData.provider_id);
+
+        const greeting = `Buenos días señor@ ${clientData.name}, le saluda Juan Pablo de Danta Labs, la empresa que esta apoyando a ${provider.name ? provider.name : "Acriventas"} en la gestión de su cartera. ¿Cómo ha estado? `
+
         setInitialGreeting(greeting);
         setSuggestedResponse(greeting);
         
