@@ -41,6 +41,7 @@ export const createProvider = async (providerData) => {
 
 // Obtener un proveedor por ID
 export const getProviderById = async (providerId) => {
+  if (!providerId) return null;
   const providerRef = doc(db, "providers", providerId);
   const providerDoc = await getDoc(providerRef);
   return providerDoc.exists()
