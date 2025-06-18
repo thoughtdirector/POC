@@ -1,113 +1,143 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getClientById, updateClient, updateClientDebt } from '../firebase/clients';
-import { 
-  getConversationsByClient, 
-  getActiveConversationsByClient
-} from '../firebase/conversations';
-import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  getClientById,
+  updateClient,
+  updateClientDebt,
+} from "../firebase/clients";
+import {
+  getConversationsByClient,
+  getActiveConversationsByClient,
+} from "../firebase/conversations";
+import { getProviderById, getAllProviders } from "../firebase/providers";
+import SoulVariablesEditor from "../components/clients/SoulVariablesEditor";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 const ClientDetail = () => {
   const { clientId } = useParams();
   const navigate = useNavigate();
-  
+
   const [client, setClient] = useState(null);
+  const [providerName, setProviderName] = useState("");
+  const [providers, setProviders] = useState([]);
   const [activeConversations, setActiveConversations] = useState([]);
   const [inactiveConversations, setInactiveConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedClient, setEditedClient] = useState(null);
-  
+
   useEffect(() => {
     const loadClientData = async () => {
       try {
         setIsLoading(true);
-        
+
         // Cargar datos del cliente
         const clientData = await getClientById(clientId);
         setClient(clientData);
         setEditedClient(clientData);
-        
+
         // Cargar conversaciones activas y cerradas
         const activeConvos = await getActiveConversationsByClient(clientId);
         const allConvos = await getConversationsByClient(clientId, 10);
-        
+
         setActiveConversations(activeConvos);
-        
+
         // Filtrar para mostrar solo las conversaciones inactivas/cerradas
-        const inactiveConvos = allConvos.filter(
-          conv => !conv.isActive
-        );
-        
+        const inactiveConvos = allConvos.filter((conv) => !conv.isActive);
+
         setInactiveConversations(inactiveConvos);
-        
       } catch (error) {
-        console.error('Error al cargar datos del cliente:', error);
+        console.error("Error al cargar datos del cliente:", error);
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     loadClientData();
   }, [clientId]);
-  
+
+  const getProviderName = async (providerId) => {
+    const provider = await getProviderById(providerId);
+    const name = provider ? provider.name : "Sin proveedor";
+    setProviderName(name);
+  };
+
+  useEffect(() => {
+    if (client?.provider_id) {
+      getProviderName(client.provider_id);
+    }
+  }, [client]);
+
+  const loadProviders = async () => {
+    try {
+      const providers = await getAllProviders();
+      setProviders(providers);
+    } catch (error) {
+      console.error("Error al cargar proveedores:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadProviders();
+  }, [isEditing]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setEditedClient(prev => ({
+    setEditedClient((prev) => ({
       ...prev,
-      [name]: name === 'debt' ? parseFloat(value) || 0 : value
+      [name]: name === "debt" ? parseFloat(value) || 0 : value,
     }));
   };
-  
+
   const handleSoulChange = (newSoulValues) => {
-    setEditedClient(prev => ({
+    setEditedClient((prev) => ({
       ...prev,
-      soul: newSoulValues
+      soul: newSoulValues,
     }));
   };
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     try {
       setIsLoading(true);
-      
+
       // Actualizar datos básicos, incluyendo el alma
       await updateClient(clientId, {
         name: editedClient.name,
         email: editedClient.email,
         phone: editedClient.phone,
         notes: editedClient.notes,
-        soul: editedClient.soul // Incluir el alma en la actualización
+        soul: editedClient.soul, // Incluir el alma en la actualización
+        provider_id: editedClient.provider_id ? editedClient.provider_id : "",
       });
-      
+
       // Actualizar monto de deuda si cambió
       if (client.debt !== editedClient.debt) {
         await updateClientDebt(clientId, editedClient.debt);
       }
-      
+
       // Actualizar el objeto cliente local
       setClient(editedClient);
       setIsEditing(false);
     } catch (error) {
-      console.error('Error al actualizar cliente:', error);
+      console.error("Error al actualizar cliente:", error);
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const startNewConversation = () => {
     navigate(`/conversation/new/${clientId}`);
   };
-  
+
   const formatDate = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp) return "N/A";
     const date = new Date(timestamp.seconds * 1000);
-    return format(date, 'PPP', { locale: es });
+    return format(date, "PPP", { locale: es });
   };
-  
+
   if (isLoading && !client) {
     return (
       <div className="container mx-auto px-4 py-6">
@@ -120,24 +150,27 @@ const ClientDetail = () => {
       </div>
     );
   }
-  
+
   if (!client) {
     return (
       <div className="container mx-auto px-4 py-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Error:</strong>
-          <span className="block sm:inline"> No se pudo encontrar el cliente.</span>
-        </div>
-        <button 
-          className="btn-secondary mt-4"
-          onClick={() => navigate(-1)}
+        <div
+          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+          role="alert"
         >
+          <strong className="font-bold">Error:</strong>
+          <span className="block sm:inline">
+            {" "}
+            No se pudo encontrar el cliente.
+          </span>
+        </div>
+        <button className="btn-secondary mt-4" onClick={() => navigate(-1)}>
           Volver
         </button>
       </div>
     );
   }
-  
+
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex justify-between items-center mb-6">
@@ -145,21 +178,18 @@ const ClientDetail = () => {
         <div className="flex gap-2">
           {!isEditing ? (
             <>
-              <button 
+              <button
                 className="btn-secondary"
                 onClick={() => setIsEditing(true)}
               >
                 Editar
               </button>
-              <button 
-                className="btn-primary"
-                onClick={startNewConversation}
-              >
+              <button className="btn-primary" onClick={startNewConversation}>
                 Nueva Conversación
               </button>
             </>
           ) : (
-            <button 
+            <button
               className="btn-secondary"
               onClick={() => {
                 setEditedClient(client);
@@ -171,14 +201,19 @@ const ClientDetail = () => {
           )}
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
           {isEditing ? (
-            <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6">
+            <form
+              onSubmit={handleSubmit}
+              className="bg-white rounded-lg shadow p-6"
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="form-group">
-                  <label htmlFor="name" className="label">Nombre completo</label>
+                  <label htmlFor="name" className="label">
+                    Nombre completo
+                  </label>
                   <input
                     type="text"
                     id="name"
@@ -189,9 +224,11 @@ const ClientDetail = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="form-group">
-                  <label htmlFor="email" className="label">Email</label>
+                  <label htmlFor="email" className="label">
+                    Email
+                  </label>
                   <input
                     type="email"
                     id="email"
@@ -201,9 +238,11 @@ const ClientDetail = () => {
                     onChange={handleChange}
                   />
                 </div>
-                
+
                 <div className="form-group">
-                  <label htmlFor="phone" className="label">Teléfono</label>
+                  <label htmlFor="phone" className="label">
+                    Teléfono
+                  </label>
                   <input
                     type="text"
                     id="phone"
@@ -214,9 +253,11 @@ const ClientDetail = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="form-group">
-                  <label htmlFor="debt" className="label">Monto de deuda</label>
+                  <label htmlFor="debt" className="label">
+                    Monto de deuda
+                  </label>
                   <input
                     type="number"
                     id="debt"
@@ -227,9 +268,31 @@ const ClientDetail = () => {
                     required
                   />
                 </div>
-                
+
+                <div className="form-group">
+                  <label htmlFor="provider" className="label">
+                    Proveedor
+                  </label>
+                  <select
+                    id="provider"
+                    name="provider_id"
+                    className="input"
+                    value={editedClient.provider_id || ""}
+                    onChange={handleChange}
+                  >
+                    <option value="">Seleccionar proveedor</option>
+                    {providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="form-group md:col-span-2">
-                  <label htmlFor="notes" className="label">Notas</label>
+                  <label htmlFor="notes" className="label">
+                    Notas
+                  </label>
                   <textarea
                     id="notes"
                     name="notes"
@@ -240,27 +303,30 @@ const ClientDetail = () => {
                   ></textarea>
                 </div>
               </div>
-              
+
               {/* Editor de variables del alma */}
               <div className="mt-6">
-                <h3 className="text-lg font-semibold mb-3">Variables del Alma</h3>
-                <SoulVariablesEditor 
+                <h3 className="text-lg font-semibold mb-3">
+                  Variables del Alma
+                </h3>
+                <SoulVariablesEditor
                   initialValues={editedClient.soul}
                   onChange={handleSoulChange}
                   readOnly={false}
                 />
                 <p className="mt-2 text-sm text-gray-500">
-                  Ajuste las variables de relación con el cliente según su conocimiento actual.
+                  Ajuste las variables de relación con el cliente según su
+                  conocimiento actual.
                 </p>
               </div>
-              
+
               <div className="flex justify-end mt-6">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn-primary"
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Guardando...' : 'Guardar Cambios'}
+                  {isLoading ? "Guardando..." : "Guardar Cambios"}
                 </button>
               </div>
             </form>
@@ -269,40 +335,63 @@ const ClientDetail = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4">
                 <div>
                   <h3 className="text-sm font-medium text-gray-500">Email</h3>
-                  <p>{client.email || 'No disponible'}</p>
+                  <p>{client.email || "No disponible"}</p>
                 </div>
-                
+
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Teléfono</h3>
-                  <p>{client.phone || 'No disponible'}</p>
+                  <h3 className="text-sm font-medium text-gray-500">
+                    Teléfono
+                  </h3>
+                  <p>{client.phone || "No disponible"}</p>
                 </div>
-                
+
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Monto de deuda</h3>
+                  <h3 className="text-sm font-medium text-gray-500">
+                    Monto de deuda
+                  </h3>
                   <p className="text-xl font-semibold text-red-600">
-                    ${client.debt.toLocaleString('es-CO')}
+                    ${client.debt.toLocaleString("es-CO")}
                   </p>
                 </div>
-                
+
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Último contacto</h3>
-                  <p>{client.lastContact ? formatDate(client.lastContact) : 'Sin contacto reciente'}</p>
+                  <h3 className="text-sm font-medium text-gray-500">
+                    Último contacto
+                  </h3>
+                  <p>
+                    {client.lastContact
+                      ? formatDate(client.lastContact)
+                      : "Sin contacto reciente"}
+                  </p>
                 </div>
-                
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500">
+                    Proveedor
+                  </h3>
+                  <p>{client.provider_id ? providerName : "Sin proveedor"}</p>
+                </div>
+
                 {client.notes && (
                   <div className="md:col-span-2 mt-4">
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Notas</h3>
-                    <p className="text-gray-700 whitespace-pre-line">{client.notes}</p>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">
+                      Notas
+                    </h3>
+                    <p className="text-gray-700 whitespace-pre-line">
+                      {client.notes}
+                    </p>
                   </div>
                 )}
               </div>
             </div>
           )}
-          
+
           {/* Conversaciones activas */}
           <div className="bg-white rounded-lg shadow p-6 mt-6">
-            <h2 className="text-lg font-semibold mb-4">Conversaciones Activas</h2>
-            
+            <h2 className="text-lg font-semibold mb-4">
+              Conversaciones Activas
+            </h2>
+
             {activeConversations.length === 0 ? (
               <p className="text-gray-500 text-center py-4">
                 No hay conversaciones activas con este cliente.
@@ -310,30 +399,42 @@ const ClientDetail = () => {
             ) : (
               <ul className="divide-y divide-gray-200">
                 {activeConversations.map((conversation) => {
-                  const startDate = conversation.startedAt ? 
-                    format(new Date(conversation.startedAt.seconds * 1000), 'PPp', { locale: es }) : 
-                    'Fecha desconocida';
-                    
-                  const lastTurn = conversation.turns && conversation.turns.length > 0 ?
-                    conversation.turns[conversation.turns.length - 1] : null;
-                  
+                  const startDate = conversation.startedAt
+                    ? format(
+                        new Date(conversation.startedAt.seconds * 1000),
+                        "PPp",
+                        { locale: es }
+                      )
+                    : "Fecha desconocida";
+
+                  const lastTurn =
+                    conversation.turns && conversation.turns.length > 0
+                      ? conversation.turns[conversation.turns.length - 1]
+                      : null;
+
                   return (
-                    <li 
-                      key={conversation.id} 
+                    <li
+                      key={conversation.id}
                       className="py-3 cursor-pointer hover:bg-gray-50"
-                      onClick={() => navigate(`/conversation/${conversation.id}`)}
+                      onClick={() =>
+                        navigate(`/conversation/${conversation.id}`)
+                      }
                     >
                       <div className="flex justify-between">
-                        <span className="font-medium">Conversación del {startDate}</span>
+                        <span className="font-medium">
+                          Conversación del {startDate}
+                        </span>
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                           Activa
                         </span>
                       </div>
-                      
+
                       {lastTurn && (
                         <p className="text-sm text-gray-600 mt-1 truncate">
                           <span className="font-medium">
-                            {lastTurn.sender === 'agent' ? 'Agente: ' : 'Cliente: '}
+                            {lastTurn.sender === "agent"
+                              ? "Agente: "
+                              : "Cliente: "}
                           </span>
                           {lastTurn.message}
                         </p>
@@ -343,21 +444,20 @@ const ClientDetail = () => {
                 })}
               </ul>
             )}
-            
+
             <div className="mt-4">
-              <button 
-                className="btn-primary"
-                onClick={startNewConversation}
-              >
+              <button className="btn-primary" onClick={startNewConversation}>
                 Iniciar Nueva Conversación
               </button>
             </div>
           </div>
-          
+
           {/* Historial de conversaciones */}
           <div className="bg-white rounded-lg shadow p-6 mt-6">
-            <h2 className="text-lg font-semibold mb-4">Historial de Conversaciones</h2>
-            
+            <h2 className="text-lg font-semibold mb-4">
+              Historial de Conversaciones
+            </h2>
+
             {inactiveConversations.length === 0 ? (
               <p className="text-gray-500 text-center py-4">
                 No hay conversaciones en el historial.
@@ -365,42 +465,61 @@ const ClientDetail = () => {
             ) : (
               <ul className="divide-y divide-gray-200">
                 {inactiveConversations.map((conversation) => {
-                  const startDate = conversation.startedAt ? 
-                    format(new Date(conversation.startedAt.seconds * 1000), 'PPp', { locale: es }) : 
-                    'Fecha desconocida';
-                    
-                  const lastTurn = conversation.turns && conversation.turns.length > 0 ?
-                    conversation.turns[conversation.turns.length - 1] : null;
-                  
+                  const startDate = conversation.startedAt
+                    ? format(
+                        new Date(conversation.startedAt.seconds * 1000),
+                        "PPp",
+                        { locale: es }
+                      )
+                    : "Fecha desconocida";
+
+                  const lastTurn =
+                    conversation.turns && conversation.turns.length > 0
+                      ? conversation.turns[conversation.turns.length - 1]
+                      : null;
+
                   return (
-                    <li 
-                      key={conversation.id} 
+                    <li
+                      key={conversation.id}
                       className="py-3 cursor-pointer hover:bg-gray-50"
-                      onClick={() => navigate(`/conversation/${conversation.id}`)}
+                      onClick={() =>
+                        navigate(`/conversation/${conversation.id}`)
+                      }
                     >
                       <div className="flex justify-between">
-                        <span className="font-medium">Conversación del {startDate}</span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          conversation.status === 'closed' ? 'bg-gray-100 text-gray-800' : 
-                          'bg-blue-100 text-blue-800'
-                        }`}>
-                          {conversation.status === 'closed' ? 'Finalizada' : 'Inactiva'}
+                        <span className="font-medium">
+                          Conversación del {startDate}
+                        </span>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            conversation.status === "closed"
+                              ? "bg-gray-100 text-gray-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
+                          {conversation.status === "closed"
+                            ? "Finalizada"
+                            : "Inactiva"}
                         </span>
                       </div>
-                      
+
                       {lastTurn && (
                         <p className="text-sm text-gray-600 mt-1 truncate">
                           <span className="font-medium">
-                            {lastTurn.sender === 'agent' ? 'Agente: ' : 'Cliente: '}
+                            {lastTurn.sender === "agent"
+                              ? "Agente: "
+                              : "Cliente: "}
                           </span>
                           {lastTurn.message}
                         </p>
                       )}
-                      
+
                       {conversation.summary && (
                         <div className="mt-1 text-xs">
                           <span className="text-gray-500">Resultado: </span>
-                          <span className="font-medium">{conversation.summary.result}</span>
+                          <span className="font-medium">
+                            {conversation.summary.result}
+                          </span>
                         </div>
                       )}
                     </li>
@@ -410,25 +529,27 @@ const ClientDetail = () => {
             )}
           </div>
         </div>
-        
+
         <div>
           {/* Variables del alma */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">Variables del Alma</h2>
-            
-            <SoulVariablesEditor 
-              initialValues={isEditing ? editedClient.soul : client.soul} 
+
+            <SoulVariablesEditor
+              initialValues={isEditing ? editedClient.soul : client.soul}
               onChange={isEditing ? handleSoulChange : null}
               readOnly={!isEditing}
             />
-            
+
             <div className="mt-4 text-sm text-gray-500">
               <p>
-                Estas variables representan la disposición y relación del cliente, 
-                y se ajustan automáticamente durante las conversaciones.
+                Estas variables representan la disposición y relación del
+                cliente, y se ajustan automáticamente durante las
+                conversaciones.
               </p>
               <p className="mt-2">
-                Para modificar estos valores, utilice el botón "Editar" en la parte superior.
+                Para modificar estos valores, utilice el botón "Editar" en la
+                parte superior.
               </p>
             </div>
           </div>
