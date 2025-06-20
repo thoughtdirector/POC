@@ -570,7 +570,7 @@ const NewConversation = () => {
                                 : 'bg-gray-100 text-gray-800'
                             }`}
                           >
-                            <p>{turn.message}</p>
+                            <p className="whitespace-pre-line">{turn.message}</p>
                             <p className="text-xs text-gray-500 mt-1">
                               {turn.timestamp.toLocaleTimeString()}
                             </p>

@@ -634,7 +634,7 @@ const ConversationDetail = () => {
                             />
                           ) : (
                             <>
-                              <p>{turn.message}</p>
+                              <p className="whitespace-pre-line">{turn.message}</p>
                               <div className="text-xs text-gray-500 mt-1 flex justify-between">
                                 <span>{formatDate(turn.timestamp)}</span>
                                 {turn.isManual && <span className="text-blue-500">Manual</span>}
