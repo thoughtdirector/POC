@@ -634,7 +634,7 @@ const ConversationDetail = () => {
                             />
                           ) : (
                             <>
-                              <p>{turn.message}</p>
+                              <p className="whitespace-pre-line">{turn.message}</p>
                               <div className="text-xs text-gray-500 mt-1 flex justify-between">
                                 <span>{formatDate(turn.timestamp)}</span>
                                 {turn.isManual && <span className="text-blue-500">Manual</span>}
@@ -751,6 +751,7 @@ const ConversationDetail = () => {
                         <option value="thanks">Agradece</option>
                         <option value="no_answer">No contesta</option>
                         <option value="confirms_payment">Confirma pago</option>
+                        <option value="asks_bank_info">Solicita información bancaria</option>
                       </select>
                     </div>
                   </div>

@@ -323,7 +323,8 @@ const NewConversation = () => {
       'refuses': { relationship: -20, history: -20, attitude: -20, sensitivity: 20, probability: -30 },
       'thanks': { relationship: 5, history: 0, attitude: 10, sensitivity: -5, probability: 10 },
       'no_answer': { relationship: -5, history: -10, attitude: -5, sensitivity: 0, probability: -10 },
-      'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 }
+      'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 },
+      'asks_bank_info': { relationship: 8, history: 5, attitude: 15, sensitivity: -5, probability: 25 }
     };
     
     setSuggestedDeltas(EVENT_DELTAS[newEventType] || EVENT_DELTAS.neutral);
@@ -569,7 +570,7 @@ const NewConversation = () => {
                                 : 'bg-gray-100 text-gray-800'
                             }`}
                           >
-                            <p>{turn.message}</p>
+                            <p className="whitespace-pre-line">{turn.message}</p>
                             <p className="text-xs text-gray-500 mt-1">
                               {turn.timestamp.toLocaleTimeString()}
                             </p>
@@ -682,6 +683,7 @@ const NewConversation = () => {
                     <option value="thanks">Agradece recordatorio</option>
                     <option value="no_answer">No contesta la llamada</option>
                     <option value="confirms_payment">Confirma pago realizado</option>
+                    <option value="asks_bank_info">Solicita información bancaria</option>
                   </select>
                 </div>
                 

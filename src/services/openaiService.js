@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { getConversationsByClient, getClosedConversations } from '../firebase/conversations';
 import { getAllClients, getClientById } from '../firebase/clients';
+import { getClientProvider } from '../firebase/providers';
 
 // Función para obtener la API key de localStorage
 const getApiKey = () => localStorage.getItem('openai_api_key') || "";
@@ -153,6 +154,8 @@ const buildContextualPrompt = async (clientId, clientSoul, conversationHistory, 
     console.error('Error obteniendo información del cliente:', error);
   }
 
+  const providerInfo = await getClientProvider(clientInfo?.provider_id);
+
   const previousContext = await getPreviousConversationContext(clientId);
   const similarContext = previousContext ? null : await getSimilarClientContext(clientSoul, clientInfo?.debt || 0);
   
@@ -195,7 +198,8 @@ const buildContextualPrompt = async (clientId, clientSoul, conversationHistory, 
     currentConversation,
     currentPhase,
     phaseDescription: phaseDescription[currentPhase] || phaseDescription.negotiation,
-    clientInfo
+    clientInfo,
+    providerInfo
   };
 };
 
@@ -257,6 +261,7 @@ Analiza el siguiente mensaje del cliente y clasifícalo en UNA de estas categor�
 - thanks
 - no_answer
 - confirms_payment
+- asks_bank_info
 
 Responde SOLO con la categoría, sin explicaciones adicionales.`;
 
@@ -283,7 +288,7 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
     let eventType = 'neutral';
     const possibleEvents = [
       'neutral', 'accepts_payment', 'offers_partial', 'reschedule', 
-      'evades', 'annoyed', 'refuses', 'thanks', 'no_answer', 'confirms_payment'
+      'evades', 'annoyed', 'refuses', 'thanks', 'no_answer', 'confirms_payment', 'asks_bank_info'
     ];
     
     for (const event of possibleEvents) {
@@ -303,7 +308,8 @@ Responde SOLO con la categoría, sin explicaciones adicionales.`;
       'refuses': { relationship: -20, history: -20, attitude: -20, sensitivity: 20, probability: -30 },
       'thanks': { relationship: 5, history: 0, attitude: 10, sensitivity: -5, probability: 10 },
       'no_answer': { relationship: -5, history: -10, attitude: -5, sensitivity: 0, probability: -10 },
-      'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 }
+      'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 },
+      'asks_bank_info': { relationship: 8, history: 5, attitude: 15, sensitivity: -5, probability: 25 }
     };
 
     const deltas = deltaMap[eventType] || deltaMap.neutral;
@@ -326,7 +332,9 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
     const API_KEY = getApiKey();
     
     if (!API_KEY || API_KEY.trim() === "") {
-      return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent);
+      const clientInfo = await getClientById(clientId);
+      const providerInfo = await getClientProvider(clientInfo?.provider_id);
+      return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo, clientInfo);
     }
     
     const API_URL = "https://api.openai.com/v1/chat/completions";
@@ -367,7 +375,8 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
       ? `\nINFORMACIÓN DE DEUDA: $${context.clientInfo.debt.toLocaleString('es-CO')} COP`
       : '';
     
-    const systemPrompt = `Eres un agente de cobranza profesional de Acriventas. Tu objetivo es recuperar pagos pendientes manteniendo buenas relaciones con los clientes.
+    // Modificado para usar el nombre del proveedor del cliente
+    const systemPrompt = `Eres un agente de cobranza profesional de ${context.providerInfo.name}. Tu objetivo es recuperar pagos pendientes manteniendo buenas relaciones con los clientes.
 
 REGLAS FUNDAMENTALES DE COMUNICACIÓN:
 1. SIEMPRE usar tratamiento formal (usted, nunca tutear)
@@ -375,6 +384,13 @@ REGLAS FUNDAMENTALES DE COMUNICACIÓN:
 3. En FASE DE COMUNICACIÓN DE DEUDA: Si el cliente pregunta por el monto, proporcionar la cifra específica
 4. Mantener tono profesional, empático y orientado a soluciones
 5. Adaptar el tono al perfil del cliente
+6. Si el cliente pregunta por los datos bancarios, proporcionar la información bancaria
+
+${lastEvent === "asks_bank_info" ? `
+  INFORMACIÓN BANCARIA:
+  ${context.providerInfo.bank_information}
+  `: ""
+}
 
 ${context.contextSection}
 
@@ -436,7 +452,7 @@ Genere UNA respuesta concisa (máximo 2 oraciones) usando tratamiento formal y d
     };
   } catch (error) {
     console.error('Error al generar respuesta con OpenAI:', error);
-    return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent);
+    return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, context.providerInfo, context.clientInfo);
   }
 };
 
@@ -446,7 +462,15 @@ const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) 
   
   let eventType = 'neutral';
   
-  if (messageText.includes('pagar') || messageText.includes('transferir') || messageText.includes('depositar')) {
+  if (messageText.includes('datos bancarios') || messageText.includes('información bancaria') || 
+      messageText.includes('número de cuenta') || messageText.includes('cuenta bancaria') ||
+      (messageText.includes('banco') && (messageText.includes('cuál') || messageText.includes('cual') || messageText.includes('dónde') || messageText.includes('donde'))) ||
+      (messageText.includes('cuenta') && (messageText.includes('cuál') || messageText.includes('cual') || messageText.includes('número'))) ||
+      (messageText.includes('transferir') && (messageText.includes('dónde') || messageText.includes('donde') || messageText.includes('cuál') || messageText.includes('cual'))) ||
+      (messageText.includes('pagar') && (messageText.includes('dónde') || messageText.includes('donde') || messageText.includes('cuál') || messageText.includes('cual'))) ||
+      messageText.includes('datos para pagar') || messageText.includes('información para pagar')) {
+    eventType = 'asks_bank_info';
+  } else if (messageText.includes('pagar') || messageText.includes('transferir') || messageText.includes('depositar')) {
     if (messageText.includes('completo') || messageText.includes('todo') || messageText.includes('total')) {
       eventType = 'accepts_payment';
     } else if (messageText.includes('parte') || messageText.includes('parcial') || messageText.includes('algo') || messageText.includes('abono')) {
@@ -478,7 +502,8 @@ const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) 
     'refuses': { relationship: -20, history: -20, attitude: -20, sensitivity: 20, probability: -30 },
     'thanks': { relationship: 5, history: 0, attitude: 10, sensitivity: -5, probability: 10 },
     'no_answer': { relationship: -5, history: -10, attitude: -5, sensitivity: 0, probability: -10 },
-    'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 }
+    'confirms_payment': { relationship: 10, history: 20, attitude: 20, sensitivity: -10, probability: 30 },
+    'asks_bank_info': { relationship: 8, history: 5, attitude: 15, sensitivity: -5, probability: 25 }
   };
   
   const deltas = deltaMap[eventType] || deltaMap.neutral;
@@ -491,7 +516,9 @@ const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) 
   };
 };
 
-const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClientMessage, lastEvent) => {
+// Modificado para recibir providerInfo
+const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo = null, clientInfo = null) => {
+
   let tone = 'neutral';
   
   if (clientSoul.relationship > 70) {
@@ -565,6 +592,13 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
       formal_direct: "Gracias por su confirmación. Procederemos a verificar el pago y le notificaremos una vez esté procesado en el sistema.",
       formal_soft: "Agradecemos mucho su pago. Realizaremos la verificación correspondiente y le informaremos cuando esté todo listo.",
       neutral: "Gracias por informarnos. Verificaremos el pago y actualizaremos el estado de su cuenta."
+    },
+    'asks_bank_info': {
+      friendly_no_pressure: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria por separado.'}`,
+      friendly: `Don/Doña ${clientInfo?.name || ''}, le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria completa.'}`,
+      formal_direct: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Recibirá la información bancaria detallada.'}`,
+      formal_soft: `Don/Doña ${clientInfo?.name || ''}, le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le haré llegar todos los datos bancarios necesarios.'}`,
+      neutral: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le proporcionaré la información bancaria completa.'}`
     },
     'default': {
       friendly_no_pressure: "Entiendo perfectamente su situación. No se preocupe, cuando pueda realizar el pago solo avíseme.",
