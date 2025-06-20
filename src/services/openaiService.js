@@ -595,9 +595,9 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
     },
     'asks_bank_info': {
       friendly_no_pressure: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria por separado.'}`,
-      friendly: `Don/Doña ${clientInfo?.name || ''}, me le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria completa.'}`,
+      friendly: `Don/Doña ${clientInfo?.name || ''}, le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria completa.'}`,
       formal_direct: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Recibirá la información bancaria detallada.'}`,
-      formal_soft: `Don/Doña ${clientInfo?.name || ''}, me le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le haré llegar todos los datos bancarios necesarios.'}`,
+      formal_soft: `Don/Doña ${clientInfo?.name || ''}, le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le haré llegar todos los datos bancarios necesarios.'}`,
       neutral: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le proporcionaré la información bancaria completa.'}`
     },
     'default': {
