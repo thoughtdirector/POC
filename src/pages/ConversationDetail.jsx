@@ -751,6 +751,7 @@ const ConversationDetail = () => {
                         <option value="thanks">Agradece</option>
                         <option value="no_answer">No contesta</option>
                         <option value="confirms_payment">Confirma pago</option>
+                        <option value="asks_bank_info">Solicita información bancaria</option>
                       </select>
                     </div>
                   </div>
