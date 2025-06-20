@@ -39,6 +39,21 @@ export const createProvider = async (providerData) => {
   });
 };
 
+// Obtener proveedor del cliente o retornar uno por defecto
+export const getClientProvider = async (providerId) => {
+  // Si no hay providerId, retornar el proveedor por defecto (Acriventas)
+  if (!providerId) return await getProviderById("39gNkqv2h1P9O1FLBjLf");
+  const providerRef = doc(db, "providers", providerId);
+  const providerDoc = await getDoc(providerRef);
+
+  if (!providerDoc.exists()) {
+    // Si no existe, retornar el proveedor por defecto (Acriventas)
+    return await getProviderById("39gNkqv2h1P9O1FLBjLf");
+  }
+
+  return { id: providerDoc.id, ...providerDoc.data() };
+}
+
 // Obtener un proveedor por ID
 export const getProviderById = async (providerId) => {
   if (!providerId) return null;
