@@ -334,7 +334,7 @@ export const generateAgentResponse = async (conversationHistory, clientSoul, las
     if (!API_KEY || API_KEY.trim() === "") {
       const clientInfo = await getClientById(clientId);
       const providerInfo = await getClientProvider(clientInfo?.provider_id);
-      return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo);
+      return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo, clientInfo);
     }
     
     const API_URL = "https://api.openai.com/v1/chat/completions";
@@ -452,7 +452,7 @@ Genere UNA respuesta concisa (máximo 2 oraciones) usando tratamiento formal y d
     };
   } catch (error) {
     console.error('Error al generar respuesta con OpenAI:', error);
-    return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, context.providerInfo);
+    return fallbackGenerateAgentResponse(conversationHistory, clientSoul, lastClientMessage, lastEvent, context.providerInfo, context.clientInfo);
   }
 };
 
@@ -517,7 +517,7 @@ const fallbackAnalyzeClientMessage = (message, conversationHistory, clientSoul) 
 };
 
 // Modificado para recibir providerInfo
-const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo = null) => {
+const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClientMessage, lastEvent, providerInfo = null, clientInfo = null) => {
 
   let tone = 'neutral';
   
@@ -594,11 +594,11 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
       neutral: "Gracias por informarnos. Verificaremos el pago y actualizaremos el estado de su cuenta."
     },
     'asks_bank_info': {
-      friendly_no_pressure: `Por supuesto, con mucho gusto le proporciono los datos. ${providerInfo?.bank_information || 'Le enviaré la información bancaria por separado.'}`,
-      friendly: `Claro que sí, aquí tiene los datos bancarios: ${providerInfo?.bank_information || 'Le enviaré la información bancaria completa.'}`,
-      formal_direct: `Le proporciono los datos bancarios para realizar el pago: ${providerInfo?.bank_information || 'Recibirá la información bancaria detallada.'}`,
-      formal_soft: `Con gusto le facilito la información de pago: ${providerInfo?.bank_information || 'Le haré llegar todos los datos bancarios necesarios.'}`,
-      neutral: `Aquí están los datos para realizar el pago: ${providerInfo?.bank_information || 'Le proporcionaré la información bancaria completa.'}`
+      friendly_no_pressure: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria por separado.'}`,
+      friendly: `Don/Doña ${clientInfo?.name || ''}, me le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria completa.'}`,
+      formal_direct: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Recibirá la información bancaria detallada.'}`,
+      formal_soft: `Don/Doña ${clientInfo?.name || ''}, me le adjunto las cuentas de ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le haré llegar todos los datos bancarios necesarios.'}`,
+      neutral: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le proporcionaré la información bancaria completa.'}`
     },
     'default': {
       friendly_no_pressure: "Entiendo perfectamente su situación. No se preocupe, cuando pueda realizar el pago solo avíseme.",
