@@ -17,6 +17,7 @@ import { es } from 'date-fns/locale';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
 import PaymentConfirmationModal from '../components/modals/PaymentConfirmationModal';
+import { getClientProvider } from '../firebase/providers';
 
 
 const ConversationDetail = () => {
@@ -158,9 +159,10 @@ const ConversationDetail = () => {
           };
 
           const clientTreatment = getClientTreatment(conversation.clientName);
-          const companyName = conversation.client?.provider_name || 'Acriventas';
+
+          const clientProvider = await getClientProvider(conversation.client?.provider_id);
           
-          const thanksMessage = `Buenos días ${clientTreatment}, le habla Juan Pablo de Danta Labs, la empresa que esta apoyando a ${companyName} en la gestión de su cartera. Hemos recibido su soporte de pago. Esperamos poder seguir atendiéndolo próximamente`;
+          const thanksMessage = `Buenos días ${clientTreatment}, le habla Juan Pablo de Danta Labs, la empresa que esta apoyando a ${clientProvider.name} en la gestión de su cartera. Hemos recibido su soporte de pago. Esperamos poder seguir atendiéndolo próximamente`;
 
           // Agregar el mensaje automáticamente a la conversación
           await addManualConversationTurn(conversationId, {
@@ -563,10 +565,10 @@ const ConversationDetail = () => {
           {/* Botón de Confirmar Pago - NUEVO */}
           {conversation.isActive && (
             <button 
-              className="btn-primary"
+              className="btn-primary flex flex-row items-center justify-center gap-1"
               onClick={() => setShowPaymentModal(true)}
             >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 -mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
               </svg>
               Confirmar Pago
