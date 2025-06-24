@@ -206,7 +206,9 @@ export const updateClientDebt = async (
   if (paymentInfo) {
     const paymentRecord = {
       id: `payment-${Date.now()}`, // ID único para el pago
-      date: serverTimestamp(),
+      // Firebase no permite usar serverTimestamp() en arrays, por lo que usamos new Date()
+      // Date() es la fecha actual del cliente, por lo que usamos toLocaleString para obtener la fecha en el formato de Colombia
+      date: new Date(new Date().toLocaleString("en-US", {timeZone: "America/Bogota"})),
       amount: Number(paymentInfo.amount),
       type: paymentInfo.type || "payment", // 'complete', 'partial'
       notes: paymentInfo.notes || "",
