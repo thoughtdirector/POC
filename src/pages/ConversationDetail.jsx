@@ -16,6 +16,8 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
+import PaymentConfirmationModal from '../components/modals/PaymentConfirmationModal';
+
 
 const ConversationDetail = () => {
   const { conversationId } = useParams();
@@ -30,6 +32,8 @@ const ConversationDetail = () => {
   const [responseAdded, setResponseAdded] = useState(false);
   const [currentPhase, setCurrentPhase] = useState(CONVERSATION_PHASES.NEGOTIATION);
   const [error, setError] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentProcessed, setPaymentProcessed] = useState(false);
   
   // Estados para agregar nuevos mensajes
   const [newMessage, setNewMessage] = useState({
@@ -111,6 +115,38 @@ const ConversationDetail = () => {
     
     loadConversation();
   }, [conversationId]);
+
+  const handlePaymentConfirmed = async (paymentDetails) => {
+    try {
+      // Actualizar la información del cliente localmente
+      setConversation(prevConversation => ({
+        ...prevConversation,
+        clientDebt: paymentDetails.remainingDebt,
+        client: prevConversation.client ? {
+          ...prevConversation.client,
+          debt: paymentDetails.remainingDebt
+        } : null
+      }));
+
+      // Marcar que se procesó un pago
+      setPaymentProcessed(true);
+
+      // Opcional: Actualizar el resumen de la conversación
+      setSummary(prevSummary => ({
+        ...prevSummary,
+        result: paymentDetails.remainingDebt === 0 ? 'payment' : 'partial_payment',
+        notes: prevSummary.notes 
+          ? `${prevSummary.notes}\n\nPago procesado: $${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
+          : `Pago procesado: $${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
+      }));
+
+      // Mostrar mensaje de éxito
+      console.log('Pago procesado exitosamente:', paymentDetails);
+      
+    } catch (error) {
+      console.error('Error al procesar confirmación de pago:', error);
+    }
+  };
   
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
@@ -484,6 +520,19 @@ const ConversationDetail = () => {
         </div>
         
         <div className="flex gap-2">
+          {/* Botón de Confirmar Pago - NUEVO */}
+          {conversation.isActive && (
+            <button 
+              className="btn-primary"
+              onClick={() => setShowPaymentModal(true)}
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+              </svg>
+              Confirmar Pago
+            </button>
+          )}
+          
           {/* Botón para editar conversación */}
           <button 
             className={`btn-secondary ${isEditing ? 'bg-blue-100 border-blue-300' : ''}`}
@@ -537,6 +586,28 @@ const ConversationDetail = () => {
           </button>
         </div>
       </div>
+
+      {/* Notificación de pago procesado - NUEVO */}
+      {paymentProcessed && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">
+              Pago procesado exitosamente. La información de la deuda ha sido actualizada.
+            </span>
+            <button
+              onClick={() => setPaymentProcessed(false)}
+              className="ml-auto text-green-600 hover:text-green-800"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Mostrar errores durante la conversación */}
       {error && (
@@ -1003,6 +1074,10 @@ const ConversationDetail = () => {
                 <p className="mb-2">
                   <span className="font-medium">Estado:</span> Deuda pendiente
                 </p>
+                {/* Mostrar deuda actualizada después del pago - MODIFICADO */}
+                <p className="mb-2">
+                  <span className="font-medium">Deuda:</span> ${((conversation.clientDebt !== undefined ? conversation.clientDebt : conversation.client?.debt) || 0).toLocaleString('es-CO')} COP
+                </p>
                 <p className="text-sm text-gray-500 italic">Nota: Por privacidad, no se muestran montos específicos.</p>
                 
                 <div className="mt-4">
@@ -1115,6 +1190,16 @@ const ConversationDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmación de pago - NUEVO */}
+      <PaymentConfirmationModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        clientId={conversation.clientId}
+        clientName={conversation.clientName}
+        currentDebt={conversation.clientDebt !== undefined ? conversation.clientDebt : conversation.client?.debt || 0}
+        onPaymentConfirmed={handlePaymentConfirmed}
+      />
     </div>
   );
 };
