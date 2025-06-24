@@ -12,6 +12,7 @@ import { analyzeClientMessage, generateAgentResponse } from '../services/aiServi
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
 import { getProviderById } from '../firebase/providers';
+import PaymentConfirmationModal from '../components/modals/PaymentConfirmationModal';
 
 const NewConversation = () => {
   const { clientId: paramClientId } = useParams();
@@ -71,6 +72,10 @@ const NewConversation = () => {
     sensitivity: 0,
     probability: 0
   });
+  
+  // Estados para el modal de pago - NUEVO
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentProcessed, setPaymentProcessed] = useState(false);
   
   const messageEndRef = useRef(null);
   
@@ -172,6 +177,75 @@ const NewConversation = () => {
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns]);
+
+  // Función para manejar confirmación de pago - NUEVO
+  const handlePaymentConfirmed = async (paymentDetails) => {
+    try {
+      // Actualizar cliente localmente
+      setClient(prevClient => ({
+        ...prevClient,
+        debt: paymentDetails.remainingDebt
+      }));
+
+      setPaymentProcessed(true);
+      
+      // Si el pago fue completo, avanzar automáticamente a despedida
+      if (paymentDetails.remainingDebt === 0) {
+        setCurrentPhase(CONVERSATION_PHASES.FAREWELL);
+      }
+
+      // Enviar mensaje automático de agradecimiento
+      if (conversationId) {
+        try {
+          const clientTreatment = getClientTreatment(client.name);
+          
+          // Obtener el nombre de la empresa del cliente o usar Acriventas por defecto
+          let companyName = 'Acriventas';
+          if (client.provider_id) {
+            try {
+              const provider = await getProviderById(client.provider_id);
+              if (provider && provider.name) {
+                companyName = provider.name;
+              }
+            } catch (error) {
+              console.error('Error al obtener proveedor:', error);
+              // Usar Acriventas como fallback
+            }
+          }
+          
+          const thanksMessage = `Buenos días ${clientTreatment}, le habla Juan Pablo de Danta Labs, la empresa que esta apoyando a ${companyName} en la gestión de su cartera. Hemos recibido su soporte de pago. Esperamos poder seguir atendiéndolo próximamente`;
+
+          // Agregar el mensaje automáticamente a la conversación
+          const newTurn = {
+            id: `agent-thanks-${Date.now()}`,
+            sender: 'agent',
+            message: thanksMessage,
+            phase: CONVERSATION_PHASES.PAYMENT_CONFIRMATION,
+            timestamp: new Date(),
+            event: 'payment_thanks'
+          };
+          
+          setTurns(prevTurns => [...prevTurns, newTurn]);
+
+          await addConversationTurn(conversationId, {
+            sender: 'agent',
+            message: thanksMessage,
+            phase: CONVERSATION_PHASES.PAYMENT_CONFIRMATION,
+            event: 'payment_thanks'
+          });
+
+        } catch (error) {
+          console.error('Error al enviar mensaje de agradecimiento:', error);
+          // No bloquear el proceso de pago por este error
+        }
+      }
+
+      console.log('Pago procesado exitosamente:', paymentDetails);
+      
+    } catch (error) {
+      console.error('Error al procesar confirmación de pago:', error);
+    }
+  };
   
   const handleSendAgentMessage = async () => {
     if (!message.trim() || isSending) return;
@@ -501,7 +575,19 @@ const NewConversation = () => {
     <div className="container mx-auto px-4 py-6">
       <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold">Conversación con {getClientTreatment(client.name)}</h1>
-        <div>
+        <div className="flex gap-2">
+          {/* Botón de Confirmar Pago - NUEVO */}
+          <button 
+            className="btn-primary"
+            onClick={() => setShowPaymentModal(true)}
+            disabled={!client}
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+            </svg>
+            Confirmar Pago
+          </button>
+          
           <button 
             className="btn-primary"
             onClick={finishConversation}
@@ -510,6 +596,26 @@ const NewConversation = () => {
           </button>
         </div>
       </div>
+
+      {/* Notificación de pago procesado - NUEVO */}
+      {paymentProcessed && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">
+              Pago procesado exitosamente. La deuda del cliente ha sido actualizada.
+            </span>
+            <button
+              onClick={() => setPaymentProcessed(false)}
+              className="ml-auto text-green-600 hover:text-green-800"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
@@ -721,7 +827,8 @@ const NewConversation = () => {
               <p><span className="font-medium">Tratamiento:</span> {getClientTreatment(client.name)}</p>
               <p><span className="font-medium">Teléfono:</span> {client.phone}</p>
               <p><span className="font-medium">Email:</span> {client.email || 'No disponible'}</p>
-              <p><span className="font-medium">Deuda:</span> ${client.debt.toLocaleString('es-CO')} COP</p>
+              {/* Mostrar deuda actualizada después del pago - MODIFICADO */}
+              <p><span className="font-medium">Deuda:</span> ${(client.debt || 0).toLocaleString('es-CO')} COP</p>
               
               {/* Info de debug en desarrollo */}
               {process.env.NODE_ENV === 'development' && (
@@ -752,6 +859,16 @@ const NewConversation = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmación de pago - NUEVO */}
+      <PaymentConfirmationModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        clientId={clientId}
+        clientName={client?.name || 'Cliente'}
+        currentDebt={client?.debt || 0}
+        onPaymentConfirmed={handlePaymentConfirmed}
+      />
     </div>
   );
 };

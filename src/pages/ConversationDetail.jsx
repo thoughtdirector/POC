@@ -136,9 +136,49 @@ const ConversationDetail = () => {
         ...prevSummary,
         result: paymentDetails.remainingDebt === 0 ? 'payment' : 'partial_payment',
         notes: prevSummary.notes 
-          ? `${prevSummary.notes}\n\nPago procesado: $${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
-          : `Pago procesado: $${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
+          ? `${prevSummary.notes}\n\nPago procesado: ${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
+          : `Pago procesado: ${paymentDetails.amountPaid.toLocaleString('es-CO')} COP. ${paymentDetails.notes || ''}`
       }));
+
+      // Enviar mensaje automático de agradecimiento si la conversación está activa
+      if (conversation.isActive && conversationId) {
+        try {
+          // Determinar el tratamiento apropiado (Don/Doña)
+          const getClientTreatment = (clientName) => {
+            if (!clientName) return 'estimado cliente';
+            
+            const commonFemaleNames = ['maria', 'ana', 'carmen', 'rosa', 'lucia', 'elena', 'patricia', 'laura', 'sandra', 'monica', 'claudia', 'alejandra', 'diana', 'beatriz', 'martha', 'gloria', 'adriana', 'paola', 'carolina', 'andrea', 'liliana', 'marcela', 'angela', 'catalina', 'esperanza'];
+            const firstName = clientName.toLowerCase().split(' ')[0];
+            
+            if (commonFemaleNames.includes(firstName)) {
+              return `Doña ${clientName.split(' ')[0]}`;
+            } else {
+              return `Don ${clientName.split(' ')[0]}`;
+            }
+          };
+
+          const clientTreatment = getClientTreatment(conversation.clientName);
+          const companyName = conversation.client?.provider_name || 'Acriventas';
+          
+          const thanksMessage = `Buenos días ${clientTreatment}, le habla Juan Pablo de Danta Labs, la empresa que esta apoyando a ${companyName} en la gestión de su cartera. Hemos recibido su soporte de pago. Esperamos poder seguir atendiéndolo próximamente`;
+
+          // Agregar el mensaje automáticamente a la conversación
+          await addManualConversationTurn(conversationId, {
+            sender: 'agent',
+            message: thanksMessage,
+            phase: CONVERSATION_PHASES.PAYMENT_CONFIRMATION,
+            event: 'payment_thanks'
+          });
+
+          // Recargar la conversación para mostrar el nuevo mensaje
+          const updatedConversation = await getConversationDetails(conversationId);
+          setConversation(updatedConversation);
+
+        } catch (error) {
+          console.error('Error al enviar mensaje de agradecimiento:', error);
+          // No bloquear el proceso de pago por este error
+        }
+      }
 
       // Mostrar mensaje de éxito
       console.log('Pago procesado exitosamente:', paymentDetails);
