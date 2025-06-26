@@ -11,7 +11,7 @@ import {
 import { analyzeClientMessage, generateAgentResponse } from '../services/aiService';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
-import { getProviderById } from '../firebase/providers';
+import { getClientProvider } from '../firebase/providers';
 import PaymentConfirmationModal from '../components/modals/PaymentConfirmationModal';
 
 const NewConversation = () => {
@@ -137,7 +137,7 @@ const NewConversation = () => {
         // const greeting = `Buenos días ${clientTreatment}, le saluda ${agentName} de Acriventas. Me comunico con usted respecto a su deuda pendiente por valor de $${clientData.debt.toLocaleString('es-CO')} COP.`;
 
         // Se obtiene el proveedor del cliente, si no tiene proveedor se usa Acriventas
-        const provider = await getProviderById(clientData.provider_id);
+        const provider = await getClientProvider(clientData.provider_id);
 
         const greeting = `Buenos días señor@ ${clientData.name}, le saluda Juan Pablo de Danta Labs, la empresa que esta apoyando a ${provider.name ? provider.name : "Acriventas"} en la gestión de su cartera. ¿Cómo ha estado? `
 
@@ -203,7 +203,7 @@ const NewConversation = () => {
           let companyName = 'Acriventas';
           if (client.provider_id) {
             try {
-              const provider = await getProviderById(client.provider_id);
+              const provider = await getClientProvider(client.provider_id);
               if (provider && provider.name) {
                 companyName = provider.name;
               }
