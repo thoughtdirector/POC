@@ -385,6 +385,8 @@ REGLAS FUNDAMENTALES DE COMUNICACIÓN:
 4. Mantener tono profesional, empático y orientado a soluciones
 5. Adaptar el tono al perfil del cliente
 6. Si el cliente pregunta por los datos bancarios, proporcionar la información bancaria
+7. Si ya se ha saludado al cliente, no saludar nuevamente
+8. IMPORTANTE: Usar siempre la palabra "abono" en lugar de "pago" en todas las comunicaciones
 
 ${lastEvent === "asks_bank_info" ? `
   INFORMACIÓN BANCARIA:
@@ -419,9 +421,9 @@ INSTRUCCIONES ESPECÍFICAS POR FASE:
 - CONCRETAR PAGO: Facilite el proceso, confirme fechas y métodos
 - DESPEDIDA: Cierre cordialmente, confirme acuerdos, agradezca
 
-Genere UNA respuesta concisa (máximo 2 oraciones) usando tratamiento formal y dirigiéndose como "${clientTreatment}".`;
+Genere UNA respuesta concisa (máximo 2 oraciones) usando tratamiento formal y dirigiéndose como "${clientTreatment}". Recuerde usar siempre "abono" en lugar de "pago".`;
 
-    const userPrompt = `Basándose en el contexto y el evento "${lastEvent}", genere una respuesta apropiada como agente de cobranza usando tratamiento formal.`;
+    const userPrompt = `Basándose en el contexto y el evento "${lastEvent}", genere una respuesta apropiada como agente de cobranza usando tratamiento formal. Recuerde usar siempre "abono" en lugar de "pago".`;
 
     const response = await openaiApi.post('/chat/completions', {
       model: "gpt-3.5-turbo",
@@ -442,7 +444,7 @@ Genere UNA respuesta concisa (máximo 2 oraciones) usando tratamiento formal y d
     let responseText = response.data.choices[0]?.message?.content?.trim() || '';
     
     if (!responseText) {
-      responseText = `${clientTreatment}, entiendo su situación. ¿Podríamos coordinar una fecha para el pago de su deuda pendiente?`;
+      responseText = `${clientTreatment}, entiendo su situación. ¿Podríamos coordinar una fecha para el abono de su deuda pendiente?`;
     }
     
     return {
@@ -538,60 +540,60 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
   // Respuestas con tratamiento formal
   const responseTemplates = {
     'accepts_payment': {
-      friendly_no_pressure: "Excelente, me alegra mucho escuchar eso. Cuando usted pueda realizar el pago, solo avíseme y le envío toda la información necesaria.",
+      friendly_no_pressure: "Excelente, me alegra mucho escuchar eso. Cuando usted pueda realizar el abono, solo avíseme y le envío toda la información necesaria.",
       friendly: "Perfecto, muchas gracias por su disposición. ¿Le parece bien que le envíe los datos bancarios ahora mismo?",
-      formal_direct: "Muy bien, agradecemos su decisión. Le voy a proporcionar los datos para que pueda realizar el pago antes del viernes.",
-      formal_soft: "Gracias por su confirmación. ¿Prefiere que le envíe la información de pago por WhatsApp o por correo?",
-      neutral: "Entendido. ¿Desea que le proporcione los datos bancarios para realizar el pago?"
+      formal_direct: "Muy bien, agradecemos su decisión. Le voy a proporcionar los datos para que pueda realizar el abono antes del viernes.",
+      formal_soft: "Gracias por su confirmación. ¿Prefiere que le envíe la información de abono por WhatsApp o por correo?",
+      neutral: "Entendido. ¿Desea que le proporcione los datos bancarios para realizar el abono?"
     },
     'offers_partial': {
-      friendly_no_pressure: "Agradezco mucho su esfuerzo por hacer este abono. Cualquier pago nos ayuda bastante y valoramos su compromiso.",
+      friendly_no_pressure: "Agradezco mucho su esfuerzo por hacer este abono. Cualquier abono nos ayuda bastante y valoramos su compromiso.",
       friendly: "Gracias por ofrecerse a hacer un abono. Eso nos ayuda mucho. ¿Cuándo podría usted realizar esta transferencia?",
-      formal_direct: "Tomamos nota de su propuesta de pago parcial. ¿Podría indicarnos cuándo haría este abono y cuándo el saldo restante?",
+      formal_direct: "Tomamos nota de su propuesta de abono parcial. ¿Podría indicarnos cuándo haría este abono y cuándo el saldo restante?",
       formal_soft: "Entendemos su situación y agradecemos su disposición. ¿Qué porcentaje de la deuda podría usted cubrir inicialmente?",
-      neutral: "De acuerdo con el pago parcial. ¿Podríamos coordinar cuándo haría usted este primer abono?"
+      neutral: "De acuerdo con el abono parcial. ¿Podríamos coordinar cuándo haría usted este primer abono?"
     },
     'reschedule': {
       friendly_no_pressure: "No hay ningún problema, entiendo que usted necesita más tiempo. ¿Qué fecha le resultaría más cómoda?",
-      friendly: "Claro que podemos ajustar la fecha. ¿Cuál sería el mejor momento para usted realizar el pago?",
-      formal_direct: "Podemos considerar una nueva fecha. ¿Cuál es su propuesta concreta y definitiva para el pago?",
-      formal_soft: "Entendemos la necesidad de reprogramar. ¿Qué fecha le resultaría más conveniente para realizar el pago?",
-      neutral: "De acuerdo. ¿Cuál sería la nueva fecha propuesta para efectuar el pago?"
+      friendly: "Claro que podemos ajustar la fecha. ¿Cuál sería el mejor momento para usted realizar el abono?",
+      formal_direct: "Podemos considerar una nueva fecha. ¿Cuál es su propuesta concreta y definitiva para el abono?",
+      formal_soft: "Entendemos la necesidad de reprogramar. ¿Qué fecha le resultaría más conveniente para realizar el abono?",
+      neutral: "De acuerdo. ¿Cuál sería la nueva fecha propuesta para efectuar el abono?"
     },
     'evades': {
       friendly_no_pressure: "Entiendo que puede ser un tema delicado. No se preocupe, podemos buscar juntos la mejor solución para su situación.",
-      friendly: "Comprendo que es una situación compleja. ¿Hay algo específico que podamos resolver para facilitar el pago?",
-      formal_direct: "Necesitamos una respuesta concreta sobre el pago pendiente. ¿Podría indicarnos cuál es su situación actual?",
+      friendly: "Comprendo que es una situación compleja. ¿Hay algo específico que podamos resolver para facilitar el abono?",
+      formal_direct: "Necesitamos una respuesta concreta sobre el abono pendiente. ¿Podría indicarnos cuál es su situación actual?",
       formal_soft: "Entendemos que pueda ser un tema complicado. ¿Podríamos programar una fecha para hablar con más tranquilidad?",
-      neutral: "¿Podría por favor ayudarnos a entender cuál es su situación respecto al pago pendiente?"
+      neutral: "¿Podría por favor ayudarnos a entender cuál es su situación respecto al abono pendiente?"
     },
     'annoyed': {
       friendly_no_pressure: "Lamento mucho si le he causado alguna molestia. No es mi intención incomodarle, solo buscamos encontrar una solución que funcione para ambas partes.",
       friendly: "Disculpe si le he generado alguna molestia. ¿Qué podríamos hacer diferente para resolver esta situación de la mejor manera?",
-      formal_direct: "Entendemos su molestia, sin embargo necesitamos resolver el tema del pago pendiente. ¿Qué alternativa propone usted?",
+      formal_direct: "Entendemos su molestia, sin embargo necesitamos resolver el tema del abono pendiente. ¿Qué alternativa propone usted?",
       formal_soft: "Lamentamos si esta comunicación le resulta incómoda. ¿Habría un mejor momento o forma para abordar este tema?",
       neutral: "Comprendo su posición. ¿Cómo preferiría usted que manejáramos esta situación para llegar a una solución?"
     },
     'refuses': {
-      friendly_no_pressure: "Entiendo su posición actual. Quizás podríamos explorar algunas alternativas de pago que se ajusten mejor a su situación.",
-      friendly: "Comprendo que sea difícil en este momento. ¿Podríamos considerar un plan de pagos más flexible?",
+      friendly_no_pressure: "Entiendo su posición actual. Quizás podríamos explorar algunas alternativas de abono que se ajusten mejor a su situación.",
+      friendly: "Comprendo que sea difícil en este momento. ¿Podríamos considerar un plan de abonos más flexible?",
       formal_direct: "Tomamos nota de su respuesta. Sin embargo, la deuda permanece vigente. ¿Podríamos discutir alternativas viables?",
-      formal_soft: "Entendemos que pueda tener dificultades. ¿Le interesaría conocer otras opciones de pago disponibles?",
-      neutral: "¿Podríamos explorar alternativas que faciliten el pago de la deuda pendiente?"
+      formal_soft: "Entendemos que pueda tener dificultades. ¿Le interesaría conocer otras opciones de abono disponibles?",
+      neutral: "¿Podríamos explorar alternativas que faciliten el abono de la deuda pendiente?"
     },
     'thanks': {
       friendly_no_pressure: "No hay de qué. Es un placer poder ayudarle. Si necesita cualquier cosa adicional, no dude en contactarme.",
       friendly: "Es un gusto poder ser de ayuda. ¿Hay algo más en lo que pueda asistirle para facilitar el proceso?",
-      formal_direct: "De nada. ¿Podríamos entonces confirmar cuándo realizará el pago de la deuda pendiente?",
-      formal_soft: "Nos alegra poder serle de utilidad. ¿Necesita alguna información adicional para proceder con el pago?",
-      neutral: "De nada. ¿Tiene alguna otra consulta respecto al proceso de pago?"
+      formal_direct: "De nada. ¿Podríamos entonces confirmar cuándo realizará el abono de la deuda pendiente?",
+      formal_soft: "Nos alegra poder serle de utilidad. ¿Necesita alguna información adicional para proceder con el abono?",
+      neutral: "De nada. ¿Tiene alguna otra consulta respecto al proceso de abono?"
     },
     'confirms_payment': {
-      friendly_no_pressure: "Excelente noticia. Muchas gracias por realizar el pago. Vamos a verificarlo y le confirmaremos en cuanto se refleje en el sistema.",
-      friendly: "Genial. Gracias por confirmar su pago. Lo verificaremos inmediatamente y le daremos el comprobante correspondiente.",
-      formal_direct: "Gracias por su confirmación. Procederemos a verificar el pago y le notificaremos una vez esté procesado en el sistema.",
-      formal_soft: "Agradecemos mucho su pago. Realizaremos la verificación correspondiente y le informaremos cuando esté todo listo.",
-      neutral: "Gracias por informarnos. Verificaremos el pago y actualizaremos el estado de su cuenta."
+      friendly_no_pressure: "Excelente noticia. Muchas gracias por realizar el abono. Vamos a verificarlo y le confirmaremos en cuanto se refleje en el sistema.",
+      friendly: "Genial. Gracias por confirmar su abono. Lo verificaremos inmediatamente y le daremos el comprobante correspondiente.",
+      formal_direct: "Gracias por su confirmación. Procederemos a verificar el abono y le notificaremos una vez esté procesado en el sistema.",
+      formal_soft: "Agradecemos mucho su abono. Realizaremos la verificación correspondiente y le informaremos cuando esté todo listo.",
+      neutral: "Gracias por informarnos. Verificaremos el abono y actualizaremos el estado de su cuenta."
     },
     'asks_bank_info': {
       friendly_no_pressure: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le enviaré la información bancaria por separado.'}`,
@@ -601,11 +603,11 @@ const fallbackGenerateAgentResponse = (conversationHistory, clientSoul, lastClie
       neutral: `Señor@ ${clientInfo?.name || ''}, esta es la información de las cuentas bancarias para ${providerInfo?.name || 'nuestra empresa'}: ${providerInfo?.bank_information || 'Le proporcionaré la información bancaria completa.'}`
     },
     'default': {
-      friendly_no_pressure: "Entiendo perfectamente su situación. No se preocupe, cuando pueda realizar el pago solo avíseme.",
-      friendly: "Agradezco que mantengamos esta comunicación. ¿Hay algo en lo que pueda ayudarle para facilitar el proceso de pago?",
-      formal_direct: "Necesitamos regularizar su situación de deuda pendiente. ¿Podría indicarnos una fecha específica de pago?",
-      formal_soft: "Entendemos que pueden surgir inconvenientes. ¿Podría comentarnos cuándo le sería posible realizar el pago?",
-      neutral: "¿Podría por favor indicarnos cuándo podríamos esperar el pago de la deuda pendiente?"
+      friendly_no_pressure: "Entiendo perfectamente su situación. No se preocupe, cuando pueda realizar el abono solo avíseme.",
+      friendly: "Agradezco que mantengamos esta comunicación. ¿Hay algo en lo que pueda ayudarle para facilitar el proceso de abono?",
+      formal_direct: "Necesitamos regularizar su situación de deuda pendiente. ¿Podría indicarnos una fecha específica de abono?",
+      formal_soft: "Entendemos que pueden surgir inconvenientes. ¿Podría comentarnos cuándo le sería posible realizar el abono?",
+      neutral: "¿Podría por favor indicarnos cuándo podríamos esperar el abono de la deuda pendiente?"
     }
   };
   
