@@ -9,10 +9,12 @@ import {
   CONVERSATION_PHASES 
 } from '../firebase/conversations';
 import { analyzeClientMessage, generateAgentResponse } from '../services/aiService';
+import { sendWhatsappMessage } from '../services/whatsapp';
 import SoulVariablesEditor from '../components/clients/SoulVariablesEditor';
 import PhaseSelector from '../components/conversations/PhaseSelector';
 import { getClientProvider } from '../firebase/providers';
 import PaymentConfirmationModal from '../components/modals/PaymentConfirmationModal';
+import { FaWhatsapp } from 'react-icons/fa6';
 
 const NewConversation = () => {
   const { clientId: paramClientId } = useParams();
@@ -734,11 +736,21 @@ const NewConversation = () => {
                   onChange={(e) => setMessage(e.target.value)}
                 />
                 <button
-                  className="btn-primary ml-2"
+                  className="btn-primary ml-2 cursor-pointer"
                   onClick={handleSendAgentMessage}
                   disabled={isSending || !message.trim()}
                 >
                   Enviar
+                </button>
+              </div>
+
+              <div className="flex-1 flex justify-end mt-2">
+                <button
+                  className="btn-primary bg-green-600 flex flex-row items-center gap-2 justify-center hover:bg-green-700 transition-colors"
+                  onClick={() => sendWhatsappMessage(client.phone, message)}
+                >
+                  <FaWhatsapp />
+                  Enviar mensaje a WhatsApp
                 </button>
               </div>
               
